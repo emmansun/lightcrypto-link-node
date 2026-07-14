@@ -41,6 +41,11 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Lock files (avoid exposing enterprise registry URLs)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -49,6 +54,13 @@ web_modules/
 
 # Optional npm cache directory
 .npm
+
+# Local npm configuration (registry mirrors, auth tokens)
+.npmrc
+!.npmrc.example
+
+# Utility scripts (optional, can be kept if you want to share them)
+# scripts/
 
 # Optional eslint cache
 .eslintcache
@@ -141,3 +153,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Qoder IDE configuration (personal)
+.qoder/

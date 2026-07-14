@@ -1,0 +1,34 @@
+# LightCrypto Link Node - Example .npmrc Configuration
+# 
+# Copy this file to .npmrc in your local environment for enterprise development.
+# 
+# IMPORTANT: This file should NEVER be committed to the repository.
+# It contains local configuration for:
+# - Enterprise npm registry mirrors (for faster downloads in China)
+# - Authentication tokens for private packages
+# - Proxy settings
+
+# Enterprise npm registry mirror (China)
+registry=https://registry.npmmirror.com
+
+# Or use your company's internal registry:
+# registry=https://npm.your-company.com/
+
+# Authentication token for private registry (if needed)
+# //npm.your-company.com/:_authToken=YOUR_AUTH_TOKEN_HERE
+
+# Proxy settings (if behind corporate firewall)
+# proxy=http://proxy.your-company.com:8080
+# https-proxy=http://proxy.your-company.com:8080
+
+# Optional: Use different registry for scoped packages
+# @your-company:registry=https://npm.your-company.com/
+
+# Cache configuration
+cache-max=30d
+
+# Network timeout
+fetch-timeout=60000
+
+# Retry configuration
+fetch-retries=3

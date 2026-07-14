@@ -1,0 +1,63 @@
+{
+  "name": "lightcrypto-link-node",
+  "version": "1.0.0",
+  "description": "A lightweight, application-level field encryption library (ALFE) for Node.js/Mongoose and MongoDB with blind index, multi-KMS/SM-crypto support, and 100% interoperability with the Java LightCrypto-Link ecosystem. Completely bypasses libmongocrypt.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest --testPathPattern=test/unit",
+    "test:integration": "jest --testPathPattern=test/integration",
+    "lint": "eslint src/ test/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/emmansun/lightcrypto-link-node.git"
+  },
+  "keywords": [
+    "mongodb",
+    "mongoose",
+    "encryption",
+    "field-level-encryption",
+    "blind-index",
+    "crypto",
+    "aes-256-gcm",
+    "sm4",
+    "lightcrypto"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/emmansun/lightcrypto-link-node/issues"
+  },
+  "homepage": "https://github.com/emmansun/lightcrypto-link-node#readme",
+  "peerDependencies": {
+    "mongoose": ">=8.0.0"
+  },
+  "optionalDependencies": {
+    "bson": ">=6.0.0",
+    "mongoose-long": ">=0.8.0",
+    "@alicloud/kms20160120": ">=3.0.0",
+    "@alicloud/openapi-client": ">=0.4.15",
+    "@azure/identity": ">=4.0.0",
+    "@azure/keyvault-keys": ">=4.0.0"
+  },
+  "devDependencies": {
+    "@alicloud/kms20160120": "^3.0.0",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@azure/identity": "^4.13.1",
+    "@azure/keyvault-keys": "^4.10.2",
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^10.0.0",
+    "mongoose": "^9.0.0"
+  },
+  "jest": {
+    "testMatch": [
+      "**/*.test.js"
+    ],
+    "testEnvironment": "node"
+  },
+  "allowScripts": {
+    "mongodb-memory-server@10.4.3": true
+  }
+}
