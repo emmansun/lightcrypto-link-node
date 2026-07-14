@@ -10,6 +10,7 @@ const TypeSerializer = require('./service/TypeSerializer');
 const TypeDeserializer = require('./service/TypeDeserializer');
 const KeyVaultService = require('./service/KeyVaultService');
 const { FieldCryptoService, FatalCryptoError, DecryptionError } = require('./service/FieldCryptoService');
+const ProgrammaticCryptoService = require('./service/ProgrammaticCryptoService');
 
 const CmkProvider = require('./provider/CmkProvider');
 const LocalCmkProvider = require('./provider/LocalCmkProvider');
@@ -36,6 +37,7 @@ module.exports = {
   FieldCryptoService,
   FatalCryptoError,
   DecryptionError,
+  ProgrammaticCryptoService,
 
   // Providers
   CmkProvider,

@@ -128,7 +128,29 @@ For behavior details, see [docs/architecture.md](docs/architecture.md).
 
 ## Programmatic API
 
-Use `FieldCryptoService` for manual encryption/decryption outside Mongoose:
+Use `ProgrammaticCryptoService` for manual encryption/decryption outside Mongoose — raw driver queries, aggregation pipelines, migration scripts, and DTO encryption:
+
+```javascript
+const { ProgrammaticCryptoService, KeyVaultService, LocalCmkProvider } = require('lightcrypto-link-node');
+
+const keyVaultService = new KeyVaultService({ connection, cmkProvider });
+const programmatic = new ProgrammaticCryptoService({ keyVaultService, algorithm: 'AES_256_GCM' });
+
+// Encrypt a scalar value
+const subDoc = await programmatic.encryptValue('13800138000', 'User');
+// → { _e: 1, _k: 'v1-abcd1234', _a: 'AES_256_GCM', _t: 'STR', c: <Buffer> }
+
+// Decrypt a sub-document
+const plaintext = await programmatic.decryptValue(subDoc);
+// → '13800138000'
+
+// Decrypt fields in a raw document (e.g., from aggregation or db.collection.find())
+const rawDoc = await db.collection('users').findOne({ name: 'Alice' });
+await programmatic.decryptDocument(rawDoc, 'User', ['phone', 'ssn']);
+// rawDoc.phone and rawDoc.ssn are now plaintext
+```
+
+For low-level field operations (without key vault integration), use `FieldCryptoService`:
 
 ```javascript
 const { FieldCryptoService } = require('lightcrypto-link-node');
@@ -147,6 +169,7 @@ node examples/basic-crud.js          # CRUD with blind index
 node examples/multi-algorithm.js     # AES-GCM, AES-CBC, SM4-CBC
 node examples/key-rotation.js        # DEK rotation
 node examples/config-from-env.js     # Configuration sources
+node examples/programmatic-encrypt.js # Programmatic encrypt/decrypt API
 node examples/azure-kms.js           # Azure Key Vault
 node examples/alibaba-kms.js         # Alibaba Cloud KMS
 ```

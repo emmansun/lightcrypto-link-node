@@ -46,6 +46,14 @@ Configuration management example: Demonstrates loading config from environment v
 node examples/config-from-env.js
 ```
 
+### [programmatic-encrypt.js](./programmatic-encrypt.js)
+
+Programmatic encryption example: Demonstrates `encryptValue`, `decryptValue`, and `decryptDocument` for use outside the Mongoose plugin — raw driver queries, aggregation pipelines, and migration scripts.
+
+```bash
+node examples/programmatic-encrypt.js
+```
+
 ## Cloud KMS Examples
 
 ### [azure-kms.js](./azure-kms.js)
