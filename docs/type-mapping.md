@@ -19,6 +19,9 @@ lightcrypto-link-node provides 100% type serialization compatibility with the Ja
 | LocalDateTime | LDT | Date | YYYY-MM-DDTHH:mm:ss |
 | byte[] | BYTES | Buffer | Base64 (RFC 4648) |
 | Enum | ENUM | String | Enum name |
+| Document / POJO | DOC | Object | BSON binary (`serialize()`) |
+| Collection / List | COL | Array | BSON binary (`serialize({ _v: [...] })`) |
+| Map / Dictionary | MAP | Object | BSON binary (`serialize()`) |
 
 ## Serialization Rules
 
@@ -47,6 +50,18 @@ lightcrypto-link-node provides 100% type serialization compatibility with the Ja
 
 - Serialized as the enum name (String)
 - Deserialized as String (no Java class reconstruction in Node.js)
+
+### Structured Types (DOC, COL, MAP)
+
+Structured types use BSON binary serialization instead of string serialization. The entire value is serialized as a BSON document, encrypted as a single ciphertext, and stored with the corresponding `_t` marker.
+
+- **DOC** (sub-document / POJO): Plain objects are serialized via `BSON.serialize(obj)`. Used for Mongoose sub-document fields (`Schema` instances) and nested object definitions.
+- **COL** (collection / array): Arrays are wrapped as `{ _v: [...] }` before BSON serialization. On decryption, the `_v` field is unwrapped to restore the original array.
+- **MAP** (key-value map): Plain objects serialized identically to DOC, but semantically represents a dynamic key-value map rather than a fixed-schema sub-document.
+
+> **Note:** Structured types do **not** support blind indexes. The `b` field is never generated for DOC/COL/MAP encrypted sub-documents.
+
+> **Interoperability:** BSON binary output matches Java's `DocumentCodec.encode()` byte-for-byte, ensuring cross-platform compatibility.
 
 ## Blind Index Serialization
 

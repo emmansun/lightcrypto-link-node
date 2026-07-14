@@ -27,6 +27,58 @@
 - **Regex queries**: Not supported on encrypted fields (pattern matching)
 - **Java Long precision**: Use `mongoose-long` for Long fields exceeding JavaScript safe integer range
 
+## Supported Schema Patterns for Structured Encryption
+
+### Sub-document (DOC) Encryption
+
+```javascript
+// Schema instance
+const addressSchema = new mongoose.Schema({ street: String, city: String });
+{ type: addressSchema, encrypt: true }
+
+// Nested object definition
+{ type: { street: String, city: String }, encrypt: true }
+```
+
+### Array (COL) Encryption
+
+```javascript
+// Scalar array — element-level (AUTO) or whole-array (mode: 'WHOLE')
+{ type: [String], encrypt: true }
+{ type: [String], encrypt: true, mode: 'WHOLE' }
+
+// Sub-document array — whole-array (AUTO) or element-level (not supported)
+{ type: [itemSchema], encrypt: true }
+```
+
+### Nested Path Encryption
+
+```javascript
+// Encrypt specific fields inside a sub-document
+{
+  address: {
+    street: { type: String, encrypt: true },
+    city: String  // not encrypted
+  }
+}
+
+// Encrypt specific fields inside array elements
+{
+  items: [{
+    sku: String,
+    price: { type: Number, encrypt: true }
+  }]
+}
+```
+
+### Validation Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `blindIndex: true is not supported for whole-object/whole-array` | Whole-object/array encryption cannot compute blind index on the entire blob | Remove `blindIndex: true` from the field, or use element-level encryption |
+| `EncryptionMode ELEMENT is not supported for sub-document (DOC) fields` | ELEMENT mode only applies to arrays, not sub-documents | Remove `mode: 'ELEMENT'` from the sub-document field |
+| `EncryptionMode ELEMENT is not supported for sub-document array field` | Sub-document arrays cannot use element-level mode due to Mongoose schema complexity | Use `AUTO` or `WHOLE` mode for sub-document arrays |
+
 ## Enterprise Development
 
 ### Local Development with Enterprise npm Registry

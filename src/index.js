@@ -1,6 +1,7 @@
 'use strict';
 
 const CryptoCodec = require('./crypto/CryptoCodec');
+const BsonCodec = require('./crypto/BsonCodec');
 const SymmetricEncryptor = require('./crypto/SymmetricEncryptor');
 const AesGcmEncryptor = require('./crypto/AesGcmEncryptor');
 const AesCbcEncryptor = require('./crypto/AesCbcEncryptor');
@@ -25,6 +26,7 @@ const { getKeyVaultModel } = require('./model/KeyVaultDocument');
 module.exports = {
   // Crypto
   CryptoCodec,
+  BsonCodec,
   SymmetricEncryptor,
   AesGcmEncryptor,
   AesCbcEncryptor,

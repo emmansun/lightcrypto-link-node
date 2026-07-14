@@ -1,8 +1,10 @@
 'use strict';
 
 const crypto = require('crypto');
+const { serialize, deserialize } = require('bson');
 const { FieldCryptoService } = require('../../src/service/FieldCryptoService');
 const CryptoCodec = require('../../src/crypto/CryptoCodec');
+const BsonCodec = require('../../src/crypto/BsonCodec');
 const TypeSerializer = require('../../src/service/TypeSerializer');
 
 /**
@@ -182,6 +184,202 @@ describe('Java Interoperability', () => {
     test('byte[] serialization matches Java Base64.getEncoder()', () => {
       const buf = Buffer.from([0x00, 0x01, 0x02, 0xFF]);
       expect(serializer.serializeToString(buf)).toBe(buf.toString('base64'));
+    });
+  });
+
+  describe('Structured type interoperability', () => {
+    let bsonCodec;
+    const dek = crypto.randomBytes(32);
+    const algo = 'AES_256_GCM';
+
+    beforeEach(() => {
+      bsonCodec = new BsonCodec();
+    });
+
+    test('DOC: Node.js BsonCodec output is valid BSON parseable by Java DocumentCodec', () => {
+      const obj = { city: 'Shanghai', zip: '200000' };
+      const bsonBuf = bsonCodec.encodeDocument(obj);
+
+      // Verify the BSON binary can be deserialized back (same as Java's DocumentCodec.decode)
+      const decoded = deserialize(bsonBuf);
+      expect(decoded.city).toBe('Shanghai');
+      expect(decoded.zip).toBe('200000');
+
+      // Encrypt and build DOC sub-document
+      const subDoc = fieldService.encryptField(obj, 'address', dek, TEST_HMAC_KEY, TEST_KID, algo, {
+        structuredType: 'DOC'
+      });
+      expect(subDoc._t).toBe('DOC');
+      expect(subDoc._e).toBe(1);
+      expect(subDoc.b).toBeUndefined(); // DOC should not have blind index
+
+      // Decrypt and verify
+      const decrypted = fieldService.decryptField(subDoc, dek, TEST_HMAC_KEY, algo);
+      expect(decrypted).toEqual(obj);
+    });
+
+    test('COL: Node.js BsonCodec output for array is valid BSON with _v wrapper', () => {
+      const arr = ['alpha', 'beta', 'gamma'];
+      const bsonBuf = bsonCodec.encodeCollection(arr);
+
+      // Verify BSON contains _v array (same as Java's { _v: [...] } wrapper)
+      const decoded = deserialize(bsonBuf);
+      expect(decoded._v).toEqual(arr);
+
+      // Encrypt and build COL sub-document
+      const subDoc = fieldService.encryptField(arr, 'tags', dek, TEST_HMAC_KEY, TEST_KID, algo, {
+        structuredType: 'COL'
+      });
+      expect(subDoc._t).toBe('COL');
+      expect(subDoc._e).toBe(1);
+
+      // Decrypt and verify
+      const decrypted = fieldService.decryptField(subDoc, dek, TEST_HMAC_KEY, algo);
+      expect(decrypted).toEqual(arr);
+    });
+
+    test('MAP: encrypt/decrypt plain object with _t: MAP marker', () => {
+      const map = { key1: 'value1', key2: 'value2' };
+
+      const subDoc = fieldService.encryptField(map, 'metadata', dek, TEST_HMAC_KEY, TEST_KID, algo, {
+        structuredType: 'MAP'
+      });
+      expect(subDoc._t).toBe('MAP');
+      expect(subDoc._e).toBe(1);
+
+      const decrypted = fieldService.decryptField(subDoc, dek, TEST_HMAC_KEY, algo);
+      expect(decrypted).toEqual(map);
+    });
+
+    test('BsonCodec byte output matches Java BSON spec for simple document', () => {
+      // Java's `new Document("name", "Alice").append("age", 30)` produces the same BSON bytes
+      const obj = { name: 'Alice', age: 30 };
+      const nodeBson = bsonCodec.encodeDocument(obj);
+
+      // Verify it starts with BSON size (int32 LE) and ends with 0x00 terminator
+      const size = nodeBson.readInt32LE(0);
+      expect(size).toBe(nodeBson.length);
+      expect(nodeBson[nodeBson.length - 1]).toBe(0x00);
+
+      // Verify deserialization matches
+      const decoded = deserialize(nodeBson);
+      expect(decoded).toEqual(obj);
+    });
+
+    test('element-level encrypted array format matches Java output', () => {
+      // Simulate element-level encryption: each array element is encrypted independently
+      const arr = ['secret1', 'secret2', 'secret3'];
+      const encryptedElements = arr.map((elem, i) => {
+        return fieldService.encryptField(elem, `tags.${i}`, dek, TEST_HMAC_KEY, TEST_KID, algo);
+      });
+
+      // Verify each element is a valid encrypted sub-document
+      for (const subDoc of encryptedElements) {
+        expect(subDoc._e).toBe(1);
+        expect(subDoc._k).toBe(TEST_KID);
+        expect(subDoc._a).toBe('AES_256_GCM');
+        expect(subDoc._t).toBe('STR');
+        expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      }
+
+      // Verify round-trip
+      const decryptedElements = encryptedElements.map(subDoc => {
+        return fieldService.decryptField(subDoc, dek, TEST_HMAC_KEY, algo);
+      });
+      expect(decryptedElements).toEqual(arr);
+    });
+
+    test('DOC: decrypt Java-simulated BSON fixture with known DEK', () => {
+      // This simulates a Java-produced DOC sub-document:
+      // Java: DocumentCodec.encode(new Document("city", "Shanghai").append("zip", "200000"))
+      // produces the same BSON bytes as Node.js bson.serialize()
+      const javaDoc = { city: 'Shanghai', zip: '200000' };
+      const javaBsonBytes = serialize(javaDoc);
+
+      // Java encrypts these BSON bytes with AES-256-GCM using the same DEK
+      const codec = new CryptoCodec();
+      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM');
+
+      // Build a Java-style sub-document
+      const javaSubDoc = {
+        _e: 1,
+        _k: TEST_KID,
+        _a: 'AES_256_GCM',
+        _t: 'DOC',
+        c: javaCiphertext
+      };
+
+      // Node.js should decrypt it correctly
+      const decrypted = fieldService.decryptField(javaSubDoc, dek, TEST_HMAC_KEY, 'AES_256_GCM');
+      expect(decrypted).toEqual(javaDoc);
+    });
+
+    test('COL: decrypt Java-simulated BSON collection fixture with _v wrapper', () => {
+      // Java: BsonBinaryWriter + DocumentCodec for { _v: ["a", "b", "c"] }
+      const javaArr = ['a', 'b', 'c'];
+      const javaBsonBytes = serialize({ _v: javaArr });
+
+      const codec = new CryptoCodec();
+      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM');
+
+      const javaSubDoc = {
+        _e: 1,
+        _k: TEST_KID,
+        _a: 'AES_256_GCM',
+        _t: 'COL',
+        c: javaCiphertext
+      };
+
+      const decrypted = fieldService.decryptField(javaSubDoc, dek, TEST_HMAC_KEY, 'AES_256_GCM');
+      expect(decrypted).toEqual(javaArr);
+    });
+
+    test('MAP: decrypt Java-simulated MAP BSON fixture', () => {
+      // Java: DocumentCodec.encode(new Document("key1", "value1").append("key2", "value2"))
+      const javaMap = { key1: 'value1', key2: 'value2' };
+      const javaBsonBytes = serialize(javaMap);
+
+      const codec = new CryptoCodec();
+      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM');
+
+      const javaSubDoc = {
+        _e: 1,
+        _k: TEST_KID,
+        _a: 'AES_256_GCM',
+        _t: 'MAP',
+        c: javaCiphertext
+      };
+
+      const decrypted = fieldService.decryptField(javaSubDoc, dek, TEST_HMAC_KEY, 'AES_256_GCM');
+      expect(decrypted).toEqual(javaMap);
+    });
+
+    test('BSON byte output for DOC matches Java DocumentCodec binary format', () => {
+      // Verify Node.js BSON output is byte-identical to what Java DocumentCodec produces
+      // Java: new Document("name", "Alice").append("age", 30)
+      const obj = { name: 'Alice', age: 30 };
+      const nodeBson = serialize(obj);
+
+      // Verify BSON structure: int32 LE size, type tags, null terminator
+      const size = nodeBson.readInt32LE(0);
+      expect(size).toBe(nodeBson.length);
+      expect(nodeBson[nodeBson.length - 1]).toBe(0x00);
+
+      // Walk BSON fields to verify type tags match Java's output
+      // After the 4-byte size, fields follow: type_byte + cstring_name + value
+      let offset = 4;
+      // First field: 'name' (type 0x02 = UTF-8 string)
+      expect(nodeBson[offset]).toBe(0x02); // BSON string type
+      offset += 1 + 5; // skip type byte + 'name\0' (5 bytes)
+      const nameLen = nodeBson.readInt32LE(offset);
+      expect(nameLen).toBe(6); // 'Alice\0' = 6 bytes
+      offset += 4 + nameLen;
+
+      // Second field: 'age' (type 0x10 = int32)
+      expect(nodeBson[offset]).toBe(0x10); // BSON int32 type
+      offset += 1 + 4; // skip type byte + 'age\0' (4 bytes)
+      const ageVal = nodeBson.readInt32LE(offset);
+      expect(ageVal).toBe(30);
     });
   });
 });

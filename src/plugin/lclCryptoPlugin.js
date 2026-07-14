@@ -6,21 +6,257 @@ const TypeSerializer = require('../service/TypeSerializer');
 const { rewriteQuery } = require('./queryRewriter');
 
 /**
+ * Check if a value is a mongoose Schema instance.
+ */
+function isSchemaInstance(val) {
+  return val && typeof val === 'object' && typeof val.path === 'function' && typeof val.eachPath === 'function';
+}
+
+/**
+ * Determine the structuredType for an encrypted field based on its original definition.
+ * @returns {string|null} 'DOC', 'COL', or null (scalar)
+ */
+function resolveStructuredType(pathDef) {
+  if (!pathDef || typeof pathDef !== 'object') return null;
+
+  // Shorthand array: [Type], [Schema], [{...}]
+  if (Array.isArray(pathDef)) {
+    return 'COL';
+  }
+
+  const typeValue = pathDef.type;
+  if (typeValue == null) return null;
+
+  // Longhand array: { type: [...] }
+  if (Array.isArray(typeValue)) {
+    return 'COL';
+  }
+
+  // Schema instance: { type: someSchema }
+  if (isSchemaInstance(typeValue)) {
+    return 'DOC';
+  }
+
+  // Nested object definition: { type: { street: String, ... } }
+  if (
+    typeof typeValue === 'object' &&
+    typeValue.constructor === Object &&
+    Object.keys(typeValue).length > 0
+  ) {
+    return 'DOC';
+  }
+
+  return null;
+}
+
+/**
+ * Resolve the effective encryption mode based on field type and user-specified mode.
+ * Returns: 'WHOLE_OBJECT', 'WHOLE_ARRAY', 'ELEMENT', or null (scalar/field-level)
+ */
+function resolveMode(structuredType, mode) {
+  const effectiveMode = mode || 'AUTO';
+
+  if (structuredType === 'DOC') {
+    // POJO/sub-document: AUTO → WHOLE_OBJECT, ELEMENT → error, WHOLE → WHOLE_OBJECT
+    if (effectiveMode === 'ELEMENT') {
+      throw new Error('EncryptionMode ELEMENT is not supported for sub-document (DOC) fields');
+    }
+    return 'WHOLE_OBJECT';
+  }
+
+  if (structuredType === 'COL') {
+    // Array: need to determine based on element type and mode
+    // AUTO: element-level for scalar arrays, WHOLE_ARRAY for sub-doc arrays
+    // ELEMENT: element-level (reject sub-doc arrays)
+    // WHOLE: WHOLE_ARRAY for all arrays
+    if (effectiveMode === 'WHOLE') {
+      return 'WHOLE_ARRAY';
+    }
+    if (effectiveMode === 'ELEMENT') {
+      return 'ELEMENT';
+    }
+    // AUTO — the caller needs to inspect element type to decide
+    return 'AUTO_ARRAY';
+  }
+
+  return null; // scalar
+}
+
+/**
+ * Check if an array definition contains sub-document elements (Schema or object definition).
+ */
+function isSubDocArray(pathDef) {
+  let arrDef;
+  if (Array.isArray(pathDef)) {
+    arrDef = pathDef;
+  } else if (pathDef && Array.isArray(pathDef.type)) {
+    arrDef = pathDef.type;
+  } else {
+    return false;
+  }
+
+  if (arrDef.length === 0) return false;
+  const elem = arrDef[0];
+  if (isSchemaInstance(elem)) return true;
+  if (elem && typeof elem === 'object' && elem.constructor === Object) return true;
+  return false;
+}
+
+/**
+ * Strip encrypt/blindIndex/mode from a nested definition recursively.
+ * Collects nested encrypted field info into the options map.
+ *
+ * @param {Object} def - Nested definition (object or array element definition)
+ * @param {string} parentPath - Parent path (e.g., 'address' or 'items')
+ * @param {Object} options - The _lclFieldOptions map to collect nested field info into
+ * @returns {Object|Array} Cleaned definition safe for Mongoose
+ */
+function stripNestedEncryptOptions(def, parentPath, options, isArrayElement = false) {
+  if (Array.isArray(def)) {
+    // Array element definition — check each element
+    return def.map((elem, idx) => {
+      if (elem && typeof elem === 'object' && elem.constructor === Object && !isSchemaInstance(elem)) {
+        return stripNestedEncryptOptions(elem, parentPath, options, true);
+      }
+      return elem;
+    });
+  }
+
+  if (!def || typeof def !== 'object' || isSchemaInstance(def)) {
+    return def;
+  }
+
+  // Check if `type` is a nested object definition
+  const typeValue = def.type;
+  if (
+    typeValue &&
+    typeof typeValue === 'object' &&
+    !Array.isArray(typeValue) &&
+    !isSchemaInstance(typeValue) &&
+    typeValue.constructor === Object
+  ) {
+    // Scan nested fields for encrypt: true
+    const cleaned = {};
+    for (const [key, val] of Object.entries(typeValue)) {
+      if (
+        val &&
+        typeof val === 'object' &&
+        !Array.isArray(val) &&
+        !isSchemaInstance(val) &&
+        (val.encrypt === true || val.blindIndex === true)
+      ) {
+        // Found a nested encrypted field
+        const nestedPath = `${parentPath}.${key}`;
+        options[nestedPath] = {
+          encrypt: val.encrypt === true,
+          blindIndex: val.blindIndex === true,
+          fieldName: val.fieldName,
+          mode: val.mode,
+          structuredType: null,
+          isNested: true,
+          isArrayElement,
+          parentPath,
+          leafField: key
+        };
+
+        // Strip encrypt options from the nested field
+        const { encrypt, blindIndex, fieldName, mode, ...rest } = val;
+        cleaned[key] = rest;
+      } else {
+        cleaned[key] = val;
+      }
+    }
+    return { ...def, type: cleaned };
+  }
+
+  // Check if `type` is an array (array of sub-documents with nested encrypted fields)
+  if (typeValue && Array.isArray(typeValue) && typeValue.length > 0) {
+    const elem = typeValue[0];
+    if (elem && typeof elem === 'object' && elem.constructor === Object && !isSchemaInstance(elem)) {
+      // Scan array element fields for encrypt: true
+      const cleanedElem = {};
+      for (const [key, val] of Object.entries(elem)) {
+        if (
+          val &&
+          typeof val === 'object' &&
+          !Array.isArray(val) &&
+          !isSchemaInstance(val) &&
+          (val.encrypt === true || val.blindIndex === true)
+        ) {
+          // Found a nested encrypted field inside array element
+          const nestedPath = `${parentPath}.${key}`;
+          options[nestedPath] = {
+            encrypt: val.encrypt === true,
+            blindIndex: val.blindIndex === true,
+            fieldName: val.fieldName,
+            mode: val.mode,
+            structuredType: null,
+            isNested: true,
+            isArrayElement: true,
+            parentPath,
+            leafField: key
+          };
+
+          const { encrypt, blindIndex, fieldName, mode, ...rest } = val;
+          cleanedElem[key] = rest;
+        } else {
+          cleanedElem[key] = val;
+        }
+      }
+      return { ...def, type: [cleanedElem, ...typeValue.slice(1)] };
+    }
+  }
+
+  // Shorthand nested object: { street: { type: String, encrypt: true }, city: String }
+  // (no `type` wrapper — the whole def is the nested object)
+  if (!def.type && Object.keys(def).length > 0) {
+    const cleaned = {};
+    for (const [key, val] of Object.entries(def)) {
+      if (
+        val &&
+        typeof val === 'object' &&
+        !Array.isArray(val) &&
+        !isSchemaInstance(val) &&
+        (val.encrypt === true || val.blindIndex === true)
+      ) {
+        const nestedPath = `${parentPath}.${key}`;
+        options[nestedPath] = {
+          encrypt: val.encrypt === true,
+          blindIndex: val.blindIndex === true,
+          fieldName: val.fieldName,
+          mode: val.mode,
+          structuredType: null,
+          isNested: true,
+          isArrayElement,
+          parentPath,
+          leafField: key
+        };
+
+        const { encrypt, blindIndex, fieldName, mode, ...rest } = val;
+        cleaned[key] = rest;
+      } else {
+        cleaned[key] = val;
+      }
+    }
+    return cleaned;
+  }
+
+  return def;
+}
+
+/**
  * Preprocess schema definition to handle Mongoose 9's built-in `encrypt` option conflict.
  *
  * Mongoose 9 introduced native CSFLE support where `encrypt: true` is a reserved option.
- * This helper strips `encrypt`/`blindIndex` from schema definitions before Mongoose sees them,
+ * This helper strips `encrypt`/`blindIndex`/`mode` from schema definitions before Mongoose sees them,
  * storing them in a `_lclFieldOptions` map that the plugin can read later.
  *
- * Usage (Mongoose 9 compatible):
- *   const { prepareEncryptedSchema } = require('lightcrypto-link-node');
- *   const definition = prepareEncryptedSchema({
- *     name: String,
- *     phone: { type: String, encrypt: true, blindIndex: true },
- *     ssn: { type: String, encrypt: true }
- *   });
- *   const schema = new mongoose.Schema(definition);
- *   schema.plugin(lclCryptoPlugin, { keyVaultService, entityName: 'User' });
+ * Supports:
+ * - Scalar fields: `{ type: String, encrypt: true, blindIndex: true }`
+ * - Sub-document fields: `{ type: addressSchema, encrypt: true }` or `{ type: { street: String }, encrypt: true }`
+ * - Array fields: `{ type: [String], encrypt: true }` or `[String]` shorthand with encrypt
+ * - Nested encrypted fields inside sub-documents and arrays
+ * - `mode` option: `'AUTO'` (default), `'ELEMENT'`, `'WHOLE'`
  *
  * @param {Object} definition - Schema definition object
  * @returns {Object} Processed definition safe for new mongoose.Schema()
@@ -30,22 +266,64 @@ function prepareEncryptedSchema(definition) {
   const processed = {};
 
   for (const [pathName, pathDef] of Object.entries(definition)) {
+    // Case 1: Shorthand array with encrypt — e.g., `tags: [String]` with encrypt in the array
+    if (
+      Array.isArray(pathDef) &&
+      pathDef.encrypt === true
+    ) {
+      options[pathName] = {
+        encrypt: true,
+        blindIndex: pathDef.blindIndex === true,
+        fieldName: pathDef.fieldName,
+        mode: pathDef.mode,
+        structuredType: 'COL',
+        isSubDocArray: isSubDocArray(pathDef)
+      };
+
+      const { encrypt, blindIndex, fieldName, mode, ...rest } = pathDef;
+      // Keep the array (shorthand) for Mongoose
+      const arr = [...rest];
+      processed[pathName] = arr;
+      continue;
+    }
+
+    // Case 2: Object with encrypt/blindIndex (covers scalars, sub-docs, arrays)
     if (
       pathDef &&
       typeof pathDef === 'object' &&
       !Array.isArray(pathDef) &&
       (pathDef.encrypt === true || pathDef.blindIndex === true)
     ) {
+      // Determine structured type BEFORE transforming the definition
+      const structuredType = resolveStructuredType(pathDef);
+
       options[pathName] = {
         encrypt: pathDef.encrypt === true,
         blindIndex: pathDef.blindIndex === true,
-        fieldName: pathDef.fieldName
+        fieldName: pathDef.fieldName,
+        mode: pathDef.mode,
+        structuredType,
+        isSubDocArray: structuredType === 'COL' ? isSubDocArray(pathDef) : false
       };
 
-      const { encrypt, blindIndex, fieldName, ...rest } = pathDef;
-      processed[pathName] = rest;
+      const { encrypt, blindIndex, fieldName, mode, ...rest } = pathDef;
+
+      // Check if the type is a nested object definition (not a constructor reference)
+      // For encrypted nested objects, replace with Mixed so the entire value is stored as one blob
+      if (
+        rest.type &&
+        typeof rest.type === 'object' &&
+        !Array.isArray(rest.type) &&
+        !isSchemaInstance(rest.type) &&
+        rest.type.constructor === Object
+      ) {
+        processed[pathName] = Object;
+      } else {
+        processed[pathName] = rest;
+      }
     } else {
-      processed[pathName] = pathDef;
+      // No top-level encrypt — but scan for nested encrypted fields
+      processed[pathName] = stripNestedEncryptOptions(pathDef, pathName, options);
     }
   }
 
@@ -62,15 +340,6 @@ function prepareEncryptedSchema(definition) {
 
 /**
  * Mongoose plugin for transparent field-level encryption.
- *
- * Usage (Mongoose 9 compatible — use prepareEncryptedSchema helper):
- *   const { lclCryptoPlugin, prepareEncryptedSchema } = require('lightcrypto-link-node');
- *   const definition = prepareEncryptedSchema({
- *     phone: { type: String, encrypt: true, blindIndex: true },
- *     ssn: { type: String, encrypt: true }
- *   });
- *   const schema = new mongoose.Schema(definition);
- *   schema.plugin(lclCryptoPlugin, { keyVaultService, entityName: 'User' });
  *
  * @param {mongoose.Schema} schema - Mongoose schema
  * @param {Object} options - Plugin options
@@ -91,16 +360,69 @@ function lclCryptoPlugin(schema, options) {
   // Priority 2: custom option keys (lclEncrypt / lclBlindIndex) for advanced users
   const encryptedFields = new Map();
 
+  // Get original definition for type inspection
+  const originalDefinition = schema.obj || {};
+
   // Mongoose stores the definition object as schema.obj, which retains our non-enumerable property
   const lclOptions = (schema.obj && schema.obj._lclFieldOptions) || {};
   for (const [pathName, opts] of Object.entries(lclOptions)) {
     if (opts.encrypt) {
+      // Nested encrypted field (inside sub-document or array element)
+      if (opts.isNested) {
+        const parentSchemaType = schema.path(opts.parentPath);
+        const leafSchemaType = schema.path(pathName);
+        encryptedFields.set(pathName, {
+          encrypt: true,
+          blindIndex: opts.blindIndex === true,
+          customFieldName: opts.fieldName,
+          mongooseType: leafSchemaType ? leafSchemaType.instance : 'String',
+          structuredType: null,
+          mode: null,
+          isNested: true,
+          isArrayElement: opts.isArrayElement === true,
+          parentPath: opts.parentPath,
+          leafField: opts.leafField
+        });
+        continue;
+      }
+
       const schemaType = schema.path(pathName);
+
+      // Use pre-computed structuredType from prepareEncryptedSchema
+      const structuredType = opts.structuredType || resolveStructuredType(originalDefinition[pathName]);
+
+      // Resolve mode
+      const mode = resolveMode(structuredType, opts.mode);
+
+      // For AUTO_ARRAY, determine based on element type
+      let effectiveMode = mode;
+      if (mode === 'AUTO_ARRAY') {
+        const subDocArr = opts.isSubDocArray || isSubDocArray(originalDefinition[pathName]);
+        effectiveMode = subDocArr ? 'WHOLE_ARRAY' : 'ELEMENT';
+      }
+
+      // Validate: blindIndex + whole-object/whole-array → error
+      if (opts.blindIndex && (effectiveMode === 'WHOLE_OBJECT' || effectiveMode === 'WHOLE_ARRAY')) {
+        throw new Error(
+          `blindIndex: true is not supported for whole-${effectiveMode === 'WHOLE_OBJECT' ? 'object' : 'array'} encrypted field '${pathName}'`
+        );
+      }
+
+      // Validate: ELEMENT mode on sub-doc array → error
+      const isSubDocArr = opts.isSubDocArray || isSubDocArray(originalDefinition[pathName]);
+      if (effectiveMode === 'ELEMENT' && isSubDocArr) {
+        throw new Error(
+          `EncryptionMode ELEMENT is not supported for sub-document array field '${pathName}'`
+        );
+      }
+
       encryptedFields.set(pathName, {
         encrypt: true,
         blindIndex: opts.blindIndex === true,
         customFieldName: opts.fieldName,
-        mongooseType: schemaType ? schemaType.instance : 'String'
+        mongooseType: schemaType ? schemaType.instance : 'String',
+        structuredType,
+        mode: effectiveMode
       });
     }
   }
@@ -114,7 +436,9 @@ function lclCryptoPlugin(schema, options) {
         encrypt: true,
         blindIndex: opts.lclBlindIndex === true,
         customFieldName: opts.lclFieldName,
-        mongooseType: schemaType.instance
+        mongooseType: schemaType.instance,
+        structuredType: null,
+        mode: null
       });
     }
   });
@@ -127,8 +451,16 @@ function lclCryptoPlugin(schema, options) {
   schema._lclEncryptedFields = encryptedFields;
 
   // Transform schema: change encrypted fields to Mixed type to store sub-documents
-  for (const [pathName] of encryptedFields) {
-    schema.path(pathName, { type: Object });
+  for (const [pathName, fieldConfig] of encryptedFields) {
+    if (fieldConfig.isNested && fieldConfig.isArrayElement) {
+      // For nested fields inside array elements, transform the path in the array's sub-schema
+      const arraySchemaType = schema.path(fieldConfig.parentPath);
+      if (arraySchemaType && arraySchemaType.schema) {
+        arraySchemaType.schema.path(fieldConfig.leafField, { type: Object });
+      }
+    } else {
+      schema.path(pathName, { type: Object });
+    }
   }
 
   /**
@@ -139,11 +471,115 @@ function lclCryptoPlugin(schema, options) {
     const vaultEntry = await keyVaultService.ensureVaultInitialized(resolvedEntityName);
 
     for (const [pathName, fieldConfig] of encryptedFields) {
+      // Nested encrypted field inside sub-document
+      if (fieldConfig.isNested && !fieldConfig.isArrayElement) {
+        const parentValue = this.get(fieldConfig.parentPath);
+        if (!parentValue || typeof parentValue !== 'object') continue;
+
+        const leafValue = parentValue[fieldConfig.leafField];
+        if (leafValue === null || leafValue === undefined) continue;
+        if (typeof leafValue === 'object' && leafValue._e === 1) continue;
+
+        const encrypted = fieldCryptoService.encryptField(
+          leafValue,
+          pathName,
+          vaultEntry.dek,
+          vaultEntry.hmacKey,
+          vaultEntry.activeKid,
+          algorithm,
+          {
+            blindIndex: false,
+            mongooseType: fieldConfig.mongooseType,
+            customFieldName: fieldConfig.customFieldName
+          }
+        );
+
+        parentValue[fieldConfig.leafField] = encrypted;
+        this.markModified(fieldConfig.parentPath);
+        continue;
+      }
+
+      // Nested encrypted field inside array elements (LIST_ITER + FIELD)
+      if (fieldConfig.isNested && fieldConfig.isArrayElement) {
+        const arrayValue = this.get(fieldConfig.parentPath);
+        if (!Array.isArray(arrayValue)) continue;
+
+        for (let i = 0; i < arrayValue.length; i++) {
+          const elem = arrayValue[i];
+          if (!elem || typeof elem !== 'object') continue;
+          const leafValue = elem[fieldConfig.leafField];
+          if (leafValue === null || leafValue === undefined) continue;
+          if (typeof leafValue === 'object' && leafValue._e === 1) continue;
+
+          const encrypted = fieldCryptoService.encryptField(
+            leafValue,
+            pathName,
+            vaultEntry.dek,
+            vaultEntry.hmacKey,
+            vaultEntry.activeKid,
+            algorithm,
+            {
+              blindIndex: false,
+              mongooseType: fieldConfig.mongooseType,
+              customFieldName: fieldConfig.customFieldName
+            }
+          );
+          elem[fieldConfig.leafField] = encrypted;
+        }
+        this.markModified(fieldConfig.parentPath);
+        continue;
+      }
+
       const value = this.get(pathName);
       if (value === null || value === undefined) continue;
 
       // Skip if already encrypted (has _e marker)
       if (typeof value === 'object' && value._e === 1) continue;
+
+      // Element-level encryption: iterate over array elements
+      if (fieldConfig.mode === 'ELEMENT' && Array.isArray(value)) {
+        const encryptedArray = [];
+        for (const elem of value) {
+          if (elem === null || elem === undefined) {
+            encryptedArray.push(elem);
+            continue;
+          }
+          // Skip already encrypted elements
+          if (typeof elem === 'object' && elem._e === 1) {
+            encryptedArray.push(elem);
+            continue;
+          }
+          const encrypted = fieldCryptoService.encryptField(
+            elem,
+            pathName,
+            vaultEntry.dek,
+            vaultEntry.hmacKey,
+            vaultEntry.activeKid,
+            algorithm,
+            {
+              blindIndex: false,
+              mongooseType: fieldConfig.mongooseType,
+              customFieldName: fieldConfig.customFieldName
+            }
+          );
+          encryptedArray.push(encrypted);
+        }
+        this.set(pathName, encryptedArray);
+        continue;
+      }
+
+      const encryptOptions = {
+        blindIndex: fieldConfig.blindIndex,
+        mongooseType: fieldConfig.mongooseType,
+        customFieldName: fieldConfig.customFieldName
+      };
+
+      // Pass structuredType for whole-object/whole-array encryption
+      if (fieldConfig.mode === 'WHOLE_OBJECT' && fieldConfig.structuredType === 'DOC') {
+        encryptOptions.structuredType = 'DOC';
+      } else if (fieldConfig.mode === 'WHOLE_ARRAY' && fieldConfig.structuredType === 'COL') {
+        encryptOptions.structuredType = 'COL';
+      }
 
       const encrypted = fieldCryptoService.encryptField(
         value,
@@ -152,11 +588,7 @@ function lclCryptoPlugin(schema, options) {
         vaultEntry.hmacKey,
         vaultEntry.activeKid,
         algorithm,
-        {
-          blindIndex: fieldConfig.blindIndex,
-          mongooseType: fieldConfig.mongooseType,
-          customFieldName: fieldConfig.customFieldName
-        }
+        encryptOptions
       );
 
       this.set(pathName, encrypted);
@@ -218,16 +650,77 @@ function lclCryptoPlugin(schema, options) {
     // Ensure vault is initialized (loads keys into cache)
     await keyVaultService.ensureVaultInitialized(resolvedEntityName);
 
-    for (const [pathName] of encryptedFields) {
-      const subDoc = doc.get(pathName);
-      if (!subDoc || typeof subDoc !== 'object' || subDoc._e !== 1) continue;
+    for (const [pathName, fieldConfig] of encryptedFields) {
+      // Nested encrypted field inside sub-document
+      if (fieldConfig.isNested && !fieldConfig.isArrayElement) {
+        const parentValue = doc.get(fieldConfig.parentPath);
+        if (!parentValue || typeof parentValue !== 'object') continue;
+
+        const leafValue = parentValue[fieldConfig.leafField];
+        if (!leafValue || typeof leafValue !== 'object' || leafValue._e !== 1) continue;
+
+        const kid = leafValue._k;
+        const dek = await keyVaultService.getDek(resolvedEntityName, kid);
+        const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
+        const decrypted = fieldCryptoService.decryptField(leafValue, dek, hmacKey, algorithm);
+        parentValue[fieldConfig.leafField] = decrypted;
+        continue;
+      }
+
+      // Nested encrypted field inside array elements (LIST_ITER + FIELD)
+      if (fieldConfig.isNested && fieldConfig.isArrayElement) {
+        const arrayValue = doc.get(fieldConfig.parentPath);
+        if (!Array.isArray(arrayValue)) continue;
+
+        for (const elem of arrayValue) {
+          if (!elem || typeof elem !== 'object') continue;
+          const leafValue = elem[fieldConfig.leafField];
+          if (!leafValue || typeof leafValue !== 'object' || leafValue._e !== 1) continue;
+
+          const kid = leafValue._k;
+          const dek = await keyVaultService.getDek(resolvedEntityName, kid);
+          const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
+          const decrypted = fieldCryptoService.decryptField(leafValue, dek, hmacKey, algorithm);
+          elem[fieldConfig.leafField] = decrypted;
+        }
+        continue;
+      }
+
+      const fieldValue = doc.get(pathName);
+      if (!fieldValue) continue;
+
+      // Element-level encrypted array: each element is an encrypted sub-document
+      if (Array.isArray(fieldValue) && fieldValue.length > 0) {
+        const firstElem = fieldValue[0];
+        if (firstElem && typeof firstElem === 'object' && firstElem._e === 1) {
+          const decryptedArray = [];
+          for (const elem of fieldValue) {
+            if (!elem || typeof elem !== 'object' || elem._e !== 1) {
+              decryptedArray.push(elem);
+              continue;
+            }
+            const kid = elem._k;
+            const dek = await keyVaultService.getDek(resolvedEntityName, kid);
+            const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
+            const decrypted = fieldCryptoService.decryptField(elem, dek, hmacKey, algorithm);
+            decryptedArray.push(decrypted);
+          }
+          doc.set(pathName, decryptedArray);
+          continue;
+        }
+        // Non-encrypted array, skip
+        continue;
+      }
+
+      // Single encrypted sub-document (scalar, DOC, COL, MAP)
+      if (typeof fieldValue !== 'object' || fieldValue._e !== 1) continue;
 
       // Use sub-document's kid to resolve the correct DEK (supports key rotation)
-      const kid = subDoc._k;
+      const kid = fieldValue._k;
       const dek = await keyVaultService.getDek(resolvedEntityName, kid);
       const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
 
-      const decrypted = fieldCryptoService.decryptField(subDoc, dek, hmacKey, algorithm);
+      const decrypted = fieldCryptoService.decryptField(fieldValue, dek, hmacKey, algorithm);
       doc.set(pathName, decrypted);
     }
   }

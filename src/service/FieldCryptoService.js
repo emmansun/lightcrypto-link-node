@@ -1,6 +1,7 @@
 'use strict';
 
 const CryptoCodec = require('../crypto/CryptoCodec');
+const BsonCodec = require('../crypto/BsonCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 
@@ -30,6 +31,7 @@ class DecryptionError extends Error {
 class FieldCryptoService {
   constructor() {
     this._codec = new CryptoCodec();
+    this._bsonCodec = new BsonCodec();
     this._serializer = new TypeSerializer();
     this._deserializer = new TypeDeserializer();
   }
@@ -46,6 +48,7 @@ class FieldCryptoService {
    * @param {boolean} [options.blindIndex=false] - Whether to compute blind index
    * @param {string} [options.mongooseType] - Mongoose schema type hint
    * @param {string} [options.customFieldName] - Custom field name for blind index
+   * @param {string} [options.structuredType] - Structured type marker ('DOC', 'COL', 'MAP')
    * @returns {Object} Encrypted sub-document
    */
   encryptField(value, fieldName, dek, hmacKey, activeKid, algorithm, options = {}) {
@@ -56,7 +59,36 @@ class FieldCryptoService {
     const blindIndex = options.blindIndex || false;
     const mongooseType = options.mongooseType;
     const effectiveFieldName = options.customFieldName || fieldName;
+    const structuredType = options.structuredType;
 
+    // Structured type path: DOC / COL / MAP
+    if (structuredType === 'DOC' || structuredType === 'MAP') {
+      // Convert Mongoose SubDocument to plain object if needed
+      const plainObj = (value && typeof value.toObject === 'function') ? value.toObject() : value;
+      const plaintext = this._bsonCodec.encodeDocument(plainObj);
+      const ciphertext = this._codec.encrypt(dek, plaintext, algorithm);
+      return {
+        _e: 1,
+        _k: activeKid,
+        _a: algorithm,
+        _t: structuredType,
+        c: ciphertext
+      };
+    }
+
+    if (structuredType === 'COL') {
+      const plaintext = this._bsonCodec.encodeCollection(value);
+      const ciphertext = this._codec.encrypt(dek, plaintext, algorithm);
+      return {
+        _e: 1,
+        _k: activeKid,
+        _a: algorithm,
+        _t: 'COL',
+        c: ciphertext
+      };
+    }
+
+    // Scalar path (existing behavior)
     // Serialize value
     const serializedString = this._serializer.serializeToString(value);
     const plaintext = Buffer.from(serializedString, 'utf8');
@@ -152,7 +184,16 @@ class FieldCryptoService {
     // Get type marker
     const typeMarker = subDocument._t || 'STR';
 
-    // Deserialize
+    // Structured type path: DOC / COL / MAP
+    if (typeMarker === 'DOC' || typeMarker === 'MAP') {
+      return this._bsonCodec.decodeDocument(plaintext);
+    }
+
+    if (typeMarker === 'COL') {
+      return this._bsonCodec.decodeCollection(plaintext);
+    }
+
+    // Scalar path (existing behavior)
     const stringValue = plaintext.toString('utf8');
     return this._deserializer.deserialize(typeMarker, stringValue);
   }

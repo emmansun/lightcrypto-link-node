@@ -274,4 +274,271 @@ describe('Integration: Mongoose Plugin + KeyVault + Field Encryption', () => {
       expect(found.active).toBe(false);
     });
   });
+
+  describe('Structured Type Encryption — DOC (Whole-Object)', () => {
+    let DocModel;
+
+    beforeAll(() => {
+      const addressSchema = new mongoose.Schema({
+        street: String,
+        city: String
+      });
+
+      const docSchema = new mongoose.Schema(prepareEncryptedSchema({
+        name: String,
+        address: { type: addressSchema, encrypt: true },
+        profile: { type: { bio: String, website: String }, encrypt: true }
+      }));
+
+      docSchema.plugin(lclCryptoPlugin, {
+        keyVaultService,
+        entityName: 'DocEntity',
+        algorithm: 'AES_256_GCM'
+      });
+
+      DocModel = connection.model('DocEntity', docSchema);
+    });
+
+    test('save and findOne round-trip for sub-document Schema instance (DOC)', async () => {
+      const doc = new DocModel({
+        name: 'Alice',
+        address: { street: '123 Main', city: 'Shanghai' }
+      });
+      await doc.save();
+
+      // Verify encrypted sub-document structure in database
+      const rawDoc = await DocModel.collection.findOne({ _id: doc._id });
+      expect(rawDoc.address).toHaveProperty('_e', 1);
+      expect(rawDoc.address).toHaveProperty('_t', 'DOC');
+      expect(rawDoc.address).not.toHaveProperty('b');
+
+      // Decrypt on find
+      const found = await DocModel.findOne({ _id: doc._id });
+      expect(found.address).toEqual({ street: '123 Main', city: 'Shanghai' });
+      expect(found.name).toBe('Alice');
+    });
+
+    test('save and findOne round-trip for nested object definition (DOC)', async () => {
+      const doc = new DocModel({
+        name: 'Bob',
+        profile: { bio: 'Developer', website: 'https://example.com' }
+      });
+      await doc.save();
+
+      const rawDoc = await DocModel.collection.findOne({ _id: doc._id });
+      expect(rawDoc.profile).toHaveProperty('_e', 1);
+      expect(rawDoc.profile).toHaveProperty('_t', 'DOC');
+
+      const found = await DocModel.findOne({ _id: doc._id });
+      expect(found.profile).toEqual({ bio: 'Developer', website: 'https://example.com' });
+    });
+
+    test('blindIndex: true on DOC field throws configuration error', () => {
+      expect(() => {
+        const schema = new mongoose.Schema(prepareEncryptedSchema({
+          name: String,
+          address: { type: { street: String }, encrypt: true, blindIndex: true }
+        }));
+        schema.plugin(lclCryptoPlugin, {
+          keyVaultService,
+          entityName: 'BadDoc'
+        });
+      }).toThrow(/blindIndex.*not supported/);
+    });
+
+    test('mode ELEMENT on DOC field throws configuration error', () => {
+      expect(() => {
+        const schema = new mongoose.Schema(prepareEncryptedSchema({
+          name: String,
+          address: { type: { street: String }, encrypt: true, mode: 'ELEMENT' }
+        }));
+        schema.plugin(lclCryptoPlugin, {
+          keyVaultService,
+          entityName: 'BadDocMode'
+        });
+      }).toThrow(/ELEMENT.*not supported/);
+    });
+  });
+
+  describe('Structured Type Encryption — COL (Whole-Array) and Element-Level', () => {
+    let ArrayModel;
+
+    beforeAll(() => {
+      const itemSchema = new mongoose.Schema({ sku: String, qty: Number });
+
+      const arraySchema = new mongoose.Schema(prepareEncryptedSchema({
+        name: String,
+        tags: { type: [String], encrypt: true },
+        wholeTags: { type: [String], encrypt: true, mode: 'WHOLE' },
+        items: { type: [itemSchema], encrypt: true }
+      }));
+
+      arraySchema.plugin(lclCryptoPlugin, {
+        keyVaultService,
+        entityName: 'ArrayEntity',
+        algorithm: 'AES_256_GCM'
+      });
+
+      ArrayModel = connection.model('ArrayEntity', arraySchema);
+    });
+
+    test('element-level encryption of [String] array (AUTO mode)', async () => {
+      const doc = new ArrayModel({
+        name: 'Alice',
+        tags: ['node', 'mongodb', 'encryption']
+      });
+      await doc.save();
+
+      // Verify each element is encrypted independently
+      const rawDoc = await ArrayModel.collection.findOne({ _id: doc._id });
+      expect(Array.isArray(rawDoc.tags)).toBe(true);
+      expect(rawDoc.tags).toHaveLength(3);
+      for (const elem of rawDoc.tags) {
+        expect(elem).toHaveProperty('_e', 1);
+        expect(elem).toHaveProperty('_t', 'STR');
+        expect(elem).not.toHaveProperty('b');
+      }
+
+      // Decrypt on find
+      const found = await ArrayModel.findOne({ _id: doc._id });
+      expect(found.tags).toEqual(['node', 'mongodb', 'encryption']);
+    });
+
+    test('whole-array COL encryption of [String] with mode: WHOLE', async () => {
+      const doc = new ArrayModel({
+        name: 'Bob',
+        wholeTags: ['tag1', 'tag2']
+      });
+      await doc.save();
+
+      // Verify the entire array is encrypted as one COL sub-document
+      const rawDoc = await ArrayModel.collection.findOne({ _id: doc._id });
+      expect(rawDoc.wholeTags).toHaveProperty('_e', 1);
+      expect(rawDoc.wholeTags).toHaveProperty('_t', 'COL');
+      expect(rawDoc.wholeTags).not.toHaveProperty('b');
+
+      // Decrypt on find
+      const found = await ArrayModel.findOne({ _id: doc._id });
+      expect(found.wholeTags).toEqual(['tag1', 'tag2']);
+    });
+
+    test('whole-array COL encryption of [Schema] array (AUTO)', async () => {
+      const doc = new ArrayModel({
+        name: 'Charlie',
+        items: [{ sku: 'A', qty: 1 }, { sku: 'B', qty: 2 }]
+      });
+      await doc.save();
+
+      // Verify the entire array is encrypted as one COL sub-document
+      const rawDoc = await ArrayModel.collection.findOne({ _id: doc._id });
+      expect(rawDoc.items).toHaveProperty('_e', 1);
+      expect(rawDoc.items).toHaveProperty('_t', 'COL');
+
+      // Decrypt on find
+      const found = await ArrayModel.findOne({ _id: doc._id });
+      expect(found.items).toEqual([{ sku: 'A', qty: 1 }, { sku: 'B', qty: 2 }]);
+    });
+
+    test('mode ELEMENT on sub-doc array throws configuration error', () => {
+      expect(() => {
+        const itemSchema = new mongoose.Schema({ sku: String });
+        const schema = new mongoose.Schema(prepareEncryptedSchema({
+          name: String,
+          items: { type: [itemSchema], encrypt: true, mode: 'ELEMENT' }
+        }));
+        schema.plugin(lclCryptoPlugin, {
+          keyVaultService,
+          entityName: 'BadArrayMode'
+        });
+      }).toThrow(/ELEMENT.*not supported/);
+    });
+
+    test('blindIndex: true on COL WHOLE mode throws configuration error', () => {
+      expect(() => {
+        const schema = new mongoose.Schema(prepareEncryptedSchema({
+          name: String,
+          wholeTags: { type: [String], encrypt: true, mode: 'WHOLE', blindIndex: true }
+        }));
+        schema.plugin(lclCryptoPlugin, {
+          keyVaultService,
+          entityName: 'BadColBlindIndex'
+        });
+      }).toThrow(/blindIndex.*not supported/);
+    });
+  });
+
+  describe('Nested Path Encryption', () => {
+    let NestedModel;
+
+    beforeAll(() => {
+      const nestedSchema = new mongoose.Schema(prepareEncryptedSchema({
+        name: String,
+        address: {
+          street: { type: String, encrypt: true },
+          city: String
+        },
+        items: [{
+          sku: String,
+          price: { type: Number, encrypt: true }
+        }]
+      }));
+
+      nestedSchema.plugin(lclCryptoPlugin, {
+        keyVaultService,
+        entityName: 'NestedEntity',
+        algorithm: 'AES_256_GCM'
+      });
+
+      NestedModel = connection.model('NestedEntity', nestedSchema);
+    });
+
+    test('nested encrypted field inside sub-document — only street encrypted, city visible', async () => {
+      const doc = new NestedModel({
+        name: 'Alice',
+        address: { street: '123 Main St', city: 'Shanghai' }
+      });
+      await doc.save();
+
+      // Verify only street is encrypted, city is visible
+      const rawDoc = await NestedModel.collection.findOne({ _id: doc._id });
+      expect(rawDoc.address).toBeDefined();
+      expect(rawDoc.address.street).toHaveProperty('_e', 1);
+      expect(rawDoc.address.street).toHaveProperty('_t', 'STR');
+      expect(rawDoc.address.city).toBe('Shanghai');
+
+      // Decrypt on find
+      const found = await NestedModel.findOne({ _id: doc._id });
+      expect(found.address.street).toBe('123 Main St');
+      expect(found.address.city).toBe('Shanghai');
+    });
+
+    test('encrypted field inside array of sub-documents — items[].price encrypted per-element', async () => {
+      const doc = new NestedModel({
+        name: 'Bob',
+        items: [
+          { sku: 'A', price: 100 },
+          { sku: 'B', price: 200 }
+        ]
+      });
+      await doc.save();
+
+      // Verify each price is encrypted, sku is visible
+      const rawDoc = await NestedModel.collection.findOne({ _id: doc._id });
+      expect(Array.isArray(rawDoc.items)).toBe(true);
+      expect(rawDoc.items).toHaveLength(2);
+      expect(rawDoc.items[0].sku).toBe('A');
+      expect(rawDoc.items[0].price).toHaveProperty('_e', 1);
+      expect(rawDoc.items[0].price).toHaveProperty('_t', 'INT');
+      expect(rawDoc.items[1].sku).toBe('B');
+      expect(rawDoc.items[1].price).toHaveProperty('_e', 1);
+
+      // Decrypt on find
+      const found = await NestedModel.findOne({ _id: doc._id });
+      expect(found.items).toHaveLength(2);
+      expect(found.items[0].sku).toBe('A');
+      expect(found.items[0].price).toBe(100);
+      expect(found.items[1].sku).toBe('B');
+      expect(found.items[1].price).toBe(200);
+    });
+  });
 });

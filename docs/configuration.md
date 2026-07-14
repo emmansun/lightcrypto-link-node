@@ -133,3 +133,41 @@ npm install @alicloud/kms20160120 @alicloud/openapi-client
 ```
 
 > **Note:** Both cloud providers auto-resolve `cmkVersion` and `publicKeyPem` from the KMS API when not explicitly configured. Explicit configuration always takes precedence.
+
+## Encryption Mode
+
+The `mode` option controls how structured fields (sub-documents and arrays) are encrypted.
+
+| Mode | Sub-document (DOC) | Scalar Array `[String]` | Sub-doc Array `[Schema]` |
+|------|-------------------|------------------------|--------------------------|
+| `AUTO` (default) | Whole-object | Element-level | Whole-array (COL) |
+| `ELEMENT` | Error | Element-level | Error |
+| `WHOLE` | Whole-object | Whole-array (COL) | Whole-array (COL) |
+
+### Usage
+
+```javascript
+// Whole-array encryption (all elements as one ciphertext)
+{ type: [String], encrypt: true, mode: 'WHOLE' }
+
+// Element-level encryption (each element encrypted independently)
+{ type: [String], encrypt: true, mode: 'ELEMENT' }
+
+// Whole-object sub-document encryption
+{ type: addressSchema, encrypt: true }  // AUTO = whole-object for sub-docs
+
+// Nested path encryption (encrypt specific fields within sub-documents)
+{
+  address: {
+    street: { type: String, encrypt: true },  // only street encrypted
+    city: String
+  }
+}
+```
+
+### Key Points
+
+- **Element-level**: Each array element is encrypted/decrypted independently. Supports querying individual elements but increases storage overhead.
+- **Whole-array (COL)**: The entire array is serialized as BSON and encrypted as one ciphertext. More compact but individual elements cannot be queried.
+- **Whole-object (DOC)**: The entire sub-document is serialized as BSON and encrypted. Internal fields cannot be queried individually.
+- **Nested path**: Only specific fields within a sub-document or array element are encrypted, leaving other fields visible for querying.

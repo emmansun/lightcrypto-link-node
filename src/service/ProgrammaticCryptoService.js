@@ -1,6 +1,7 @@
 'use strict';
 
 const CryptoCodec = require('../crypto/CryptoCodec');
+const BsonCodec = require('../crypto/BsonCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 const { FieldCryptoService, DecryptionError } = require('./FieldCryptoService');
@@ -31,6 +32,7 @@ class ProgrammaticCryptoService {
     this._fieldCryptoService = fieldCryptoService || new FieldCryptoService();
     this._algorithm = algorithm || DEFAULT_ALGORITHM;
     this._codec = new CryptoCodec();
+    this._bsonCodec = new BsonCodec();
     this._serializer = new TypeSerializer();
     this._deserializer = new TypeDeserializer();
   }
@@ -60,7 +62,40 @@ class ProgrammaticCryptoService {
     // Resolve active kid and DEK via keyVaultService
     const vaultEntry = await this._keyVaultService.ensureVaultInitialized(entityName);
 
-    // Serialize value to string, then to Buffer
+    // Structured type detection: plain objects and arrays use BSON binary serialization
+    if (Array.isArray(value)) {
+      const plaintext = this._bsonCodec.encodeCollection(value);
+      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo);
+      return {
+        _e: 1,
+        _k: vaultEntry.activeKid,
+        _a: algo,
+        _t: 'COL',
+        c: ciphertext,
+        _entity: entityName
+      };
+    }
+
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Buffer.isBuffer(value) &&
+      !(value instanceof Date) &&
+      value.constructor === Object
+    ) {
+      const plaintext = this._bsonCodec.encodeDocument(value);
+      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo);
+      return {
+        _e: 1,
+        _k: vaultEntry.activeKid,
+        _a: algo,
+        _t: 'DOC',
+        c: ciphertext,
+        _entity: entityName
+      };
+    }
+
+    // Scalar path: Serialize value to string, then to Buffer
     const serializedString = this._serializer.serializeToString(value);
     const plaintext = Buffer.from(serializedString, 'utf8');
 

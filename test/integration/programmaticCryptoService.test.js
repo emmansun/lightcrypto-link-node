@@ -218,4 +218,130 @@ describe('Integration: ProgrammaticCryptoService', () => {
       expect(bob.phone).toBeUndefined();
     });
   });
+
+  // ─── 6.3–6.5 Structured Type Encryption (DOC / COL) ───────────────
+  describe('Structured Type Encryption — DOC and COL', () => {
+    test('encryptValue with plain object → _t: DOC, decryptValue restores object', async () => {
+      const obj = { city: 'Shanghai', zip: '200000' };
+      const subDoc = await programmaticService.encryptValue(obj, 'User');
+
+      expect(subDoc._e).toBe(1);
+      expect(subDoc._t).toBe('DOC');
+      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+
+      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      expect(decrypted).toEqual(obj);
+    });
+
+    test('encryptValue with array → _t: COL, decryptValue restores array', async () => {
+      const arr = ['a', 'b', 'c'];
+      const subDoc = await programmaticService.encryptValue(arr, 'User');
+
+      expect(subDoc._e).toBe(1);
+      expect(subDoc._t).toBe('COL');
+      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+
+      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      expect(decrypted).toEqual(arr);
+    });
+
+    test('decryptDocument with DOC and COL fields', async () => {
+      const addressSubDoc = await programmaticService.encryptValue({ city: 'Shanghai', zip: '200000' }, 'User');
+      const tagsSubDoc = await programmaticService.encryptValue(['admin', 'active'], 'User');
+
+      await connection.collection('users').insertOne({
+        name: 'Alice',
+        address: addressSubDoc,
+        tags: tagsSubDoc
+      });
+
+      const rawDoc = await connection.collection('users').findOne({ name: 'Alice' });
+      expect(rawDoc.address._t).toBe('DOC');
+      expect(rawDoc.tags._t).toBe('COL');
+
+      const result = await programmaticService.decryptDocument(rawDoc, 'User', ['address', 'tags']);
+      expect(result.address).toEqual({ city: 'Shanghai', zip: '200000' });
+      expect(result.tags).toEqual(['admin', 'active']);
+      expect(result.name).toBe('Alice');
+    });
+
+    test('encryptValue with empty object → _t: DOC, decryptValue restores empty object', async () => {
+      const subDoc = await programmaticService.encryptValue({}, 'User');
+      expect(subDoc._t).toBe('DOC');
+      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+
+      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      expect(decrypted).toEqual({});
+    });
+
+    test('encryptValue with empty array → _t: COL, decryptValue restores empty array', async () => {
+      const subDoc = await programmaticService.encryptValue([], 'User');
+      expect(subDoc._t).toBe('COL');
+      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+
+      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      expect(decrypted).toEqual([]);
+    });
+
+    test('decryptValue restores MAP sub-document to plain object', async () => {
+      // Construct a MAP sub-document manually (same BSON encoding as DOC)
+      const BsonCodec = require('../../src/crypto/BsonCodec');
+      const CryptoCodec = require('../../src/crypto/CryptoCodec');
+      const bsonCodec = new BsonCodec();
+      const cryptoCodec = new CryptoCodec();
+
+      // Get the active DEK and kid
+      const vaultEntry = await programmaticService._keyVaultService.ensureVaultInitialized('User');
+
+      const mapValue = { key1: 'value1', key2: 'value2' };
+      const bsonBytes = bsonCodec.encodeDocument(mapValue);
+      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM');
+
+      const mapSubDoc = {
+        _e: 1,
+        _k: vaultEntry.activeKid,
+        _a: 'AES_256_GCM',
+        _t: 'MAP',
+        c: ciphertext,
+        _entity: 'User'
+      };
+
+      const decrypted = await programmaticService.decryptValue(mapSubDoc, 'User');
+      expect(decrypted).toEqual(mapValue);
+    });
+
+    test('decryptDocument with MAP field', async () => {
+      const BsonCodec = require('../../src/crypto/BsonCodec');
+      const CryptoCodec = require('../../src/crypto/CryptoCodec');
+      const bsonCodec = new BsonCodec();
+      const cryptoCodec = new CryptoCodec();
+
+      const vaultEntry = await programmaticService._keyVaultService.ensureVaultInitialized('User');
+
+      const mapValue = { lang: 'en', theme: 'dark' };
+      const bsonBytes = bsonCodec.encodeDocument(mapValue);
+      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM');
+
+      const mapSubDoc = {
+        _e: 1,
+        _k: vaultEntry.activeKid,
+        _a: 'AES_256_GCM',
+        _t: 'MAP',
+        c: ciphertext,
+        _entity: 'User'
+      };
+
+      await connection.collection('users').insertOne({
+        name: 'Alice',
+        metadata: mapSubDoc
+      });
+
+      const rawDoc = await connection.collection('users').findOne({ name: 'Alice' });
+      expect(rawDoc.metadata._t).toBe('MAP');
+
+      const result = await programmaticService.decryptDocument(rawDoc, 'User', ['metadata']);
+      expect(result.metadata).toEqual(mapValue);
+      expect(result.name).toBe('Alice');
+    });
+  });
 });

@@ -125,4 +125,84 @@ describe('FieldCryptoService', () => {
       expect(subDoc1.b).toBe(subDoc2.b);
     });
   });
+
+  describe('structured type: DOC', () => {
+    test('encrypt plain object produces _t: DOC with no b field', () => {
+      const obj = { city: 'Shanghai', street: '123 Main' };
+      const subDoc = service.encryptField(obj, 'address', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'DOC' });
+      expect(subDoc._e).toBe(1);
+      expect(subDoc._k).toBe(activeKid);
+      expect(subDoc._a).toBe('AES_256_GCM');
+      expect(subDoc._t).toBe('DOC');
+      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(subDoc.b).toBeUndefined();
+    });
+
+    test('encrypt then decrypt DOC round-trip', () => {
+      const obj = { city: 'Shanghai', street: '123 Main' };
+      const subDoc = service.encryptField(obj, 'address', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'DOC' });
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(decrypted).toEqual(obj);
+    });
+
+    test('encrypt nested object as DOC', () => {
+      const obj = { address: { city: 'Shanghai' }, tags: ['a', 'b'] };
+      const subDoc = service.encryptField(obj, 'profile', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'DOC' });
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(decrypted).toEqual(obj);
+    });
+
+    test('blind index is skipped for DOC even when requested', () => {
+      const obj = { x: 1 };
+      const subDoc = service.encryptField(obj, 'data', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'DOC', blindIndex: true });
+      expect(subDoc.b).toBeUndefined();
+    });
+
+    test('handles Mongoose SubDocument-like objects with toObject()', () => {
+      const fakeSubDoc = { toObject: () => ({ name: 'Alice', age: 30 }) };
+      const subDoc = service.encryptField(fakeSubDoc, 'profile', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'DOC' });
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(decrypted).toEqual({ name: 'Alice', age: 30 });
+    });
+  });
+
+  describe('structured type: COL', () => {
+    test('encrypt array produces _t: COL with no b field', () => {
+      const arr = ['tag1', 'tag2', 'tag3'];
+      const subDoc = service.encryptField(arr, 'tags', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'COL' });
+      expect(subDoc._e).toBe(1);
+      expect(subDoc._t).toBe('COL');
+      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(subDoc.b).toBeUndefined();
+    });
+
+    test('encrypt then decrypt COL round-trip', () => {
+      const arr = ['tag1', 'tag2', 'tag3'];
+      const subDoc = service.encryptField(arr, 'tags', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'COL' });
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(decrypted).toEqual(arr);
+    });
+
+    test('encrypt array of objects as COL', () => {
+      const arr = [{ sku: 'A', qty: 1 }, { sku: 'B', qty: 2 }];
+      const subDoc = service.encryptField(arr, 'items', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'COL' });
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(decrypted).toEqual(arr);
+    });
+  });
+
+  describe('structured type: MAP', () => {
+    test('decrypt MAP sub-document returns plain object', () => {
+      // MAP uses same BSON encoding as DOC — encrypt as DOC, verify decrypt as MAP
+      const obj = { key1: 'val1', key2: 'val2' };
+      const BsonCodec = require('../../../src/crypto/BsonCodec');
+      const bsonCodec = new BsonCodec();
+      const bsonBytes = bsonCodec.encodeDocument(obj);
+      const ciphertext = service._codec.encrypt(dek, bsonBytes, 'AES_256_GCM');
+
+      const subDoc = { _e: 1, _k: activeKid, _a: 'AES_256_GCM', _t: 'MAP', c: ciphertext };
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(decrypted).toEqual(obj);
+    });
+  });
 });

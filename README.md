@@ -33,10 +33,13 @@ Deep docs are in [docs](docs/):
 - Transparent field encryption via Mongoose plugin (pre-save/post-find hooks)
 - Blind indexing for exact-match queries (HMAC-SHA-256)
 - Multiple algorithms: AES-256-GCM (default), AES-256-CBC, SM4-CBC (China compliance)
+- Structured type encryption: whole-object (`DOC`), whole-array (`COL`), element-level array encryption
+- Nested path encryption for sub-documents and array elements (e.g., `address.street`, `items[].price`)
+- Encryption mode control: `AUTO` (default), `ELEMENT`, `WHOLE`
 - Per-entity DEK versioning and rotation
 - Pluggable CMK providers: Local, Azure Key Vault, Alibaba Cloud KMS
 - Zero third-party crypto dependencies (native Node.js `crypto`)
-- 100% BSON format compatibility with Java LightCrypto-Link
+- BSON format compatible with Java LightCrypto-Link (DOC, COL, MAP type markers)
 
 ## Quick Start
 
@@ -116,6 +119,42 @@ const result = await User.findOne({ phone: '13800138000' });
 | `encrypt: true` | Boolean | Enable encryption for this field |
 | `blindIndex: true` | Boolean | Enable blind index for exact-match queries |
 | `fieldName: string` | String | Custom field name for blind index (cross-entity sharing) |
+| `mode: string` | String | Encryption mode: `AUTO` (default), `ELEMENT`, `WHOLE` |
+
+### Encryption Modes
+
+| Field Type | AUTO (default) | ELEMENT | WHOLE |
+|---|---|---|---|
+| Scalar (String, Number, etc.) | field-level | field-level | field-level |
+| Sub-document (POJO) | whole-object (`DOC`) | error | whole-object (`DOC`) |
+| Array of scalars | element-level | element-level | whole-array (`COL`) |
+| Array of sub-docs | whole-array (`COL`) | error | whole-array (`COL`) |
+
+### Structured Type Encryption
+
+```javascript
+// Whole-object encryption (DOC) — sub-document Schema instance
+const addressSchema = new mongoose.Schema({ street: String, city: String });
+const userSchema = new mongoose.Schema(prepareEncryptedSchema({
+  name: String,
+  address: { type: addressSchema, encrypt: true }  // AUTO → DOC
+}));
+
+// Element-level encryption — scalar array
+tags: { type: [String], encrypt: true }  // AUTO → element-level
+
+// Whole-array encryption (COL) — explicit mode
+tags: { type: [String], encrypt: true, mode: 'WHOLE' }  // → COL
+
+// Nested path encryption — encrypt specific fields within sub-documents
+address: {
+  street: { type: String, encrypt: true },  // only street encrypted, city visible
+  city: String
+}
+
+// Nested path in array elements — items[].price encrypted per-element
+items: [{ sku: String, price: { type: Number, encrypt: true } }]
+```
 
 ## Rotation
 
@@ -200,7 +239,7 @@ lightcrypto-link-node/
 - **Node.js**: 22.x (recommended), 24.x
 - **Mongoose**: 8.x, 9.x
 - **MongoDB**: 5.0+, 6.0+, 7.0+, 8.0+
-- **Java LightCrypto-Link**: Full BSON format compatibility
+- **Java LightCrypto-Link**: BSON format compatible (DOC, COL, MAP type markers). Note: MAP encryption from Node.js is not yet supported; MAP decryption from Java-encrypted documents works.
 
 ## License
 
