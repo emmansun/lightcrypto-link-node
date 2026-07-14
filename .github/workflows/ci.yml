@@ -54,11 +54,13 @@ jobs:
       run: npm test -- --coverage
 
     - name: Upload coverage to Codecov
+      if: matrix.node-version == '22.x' && matrix.mongoose-version == 9
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage/lcov.info
         flags: unittests
         name: codecov-umbrella
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   security-audit:
     runs-on: ubuntu-latest
