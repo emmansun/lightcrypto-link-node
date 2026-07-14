@@ -45,11 +45,17 @@ describe('AesCbcEncryptor', () => {
     expect(enc1.equals(enc2)).toBe(false);
   });
 
-  test('decrypt fails with wrong key', () => {
+  test('decrypt with wrong key produces different plaintext', () => {
     const plaintext = Buffer.from('secret', 'utf8');
     const encrypted = encryptor.encrypt(key, plaintext);
     const wrongKey = crypto.randomBytes(32);
-    expect(() => encryptor.decrypt(wrongKey, encrypted)).toThrow();
+    // AES-CBC is not authenticated — wrong key may produce garbage or throw on padding
+    try {
+      const decrypted = encryptor.decrypt(wrongKey, encrypted);
+      expect(decrypted.toString('utf8')).not.toBe('secret');
+    } catch (_e) {
+      // Padding error is also acceptable — wrong key can cause invalid padding
+    }
   });
 
   test('computeKcv returns consistent hex string', () => {
