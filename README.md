@@ -7,7 +7,7 @@ multi-DEK envelope encryption with key rotation, multi-KMS/SM-crypto support,
 and **100% interoperability** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-brightgreen.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-brightgreen.svg)](https://nodejs.org/)
 [![Mongoose](https://img.shields.io/badge/Mongoose-8%2B-blue.svg)](https://mongoosejs.com/)
 
 ---
@@ -173,7 +173,7 @@ lightcrypto-link-node/
 
 ## Compatibility
 
-- **Node.js**: 20.x (recommended), 22.x
+- **Node.js**: 22.x (recommended), 24.x
 - **Mongoose**: 8.x, 9.x
 - **MongoDB**: 5.0+, 6.0+, 7.0+, 8.0+
 - **Java LightCrypto-Link**: Full BSON format compatibility
