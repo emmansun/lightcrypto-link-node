@@ -31,12 +31,12 @@ jobs:
         rm -f .npmrc
 
     - name: Install dependencies
-      run: npm install
+      run: npm install --legacy-peer-deps
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     - name: Install mongoose ${{ matrix.mongoose-version }}
-      run: npm install mongoose@${{ matrix.mongoose-version }} --no-save
+      run: npm install mongoose@${{ matrix.mongoose-version }} --no-save --legacy-peer-deps
 
     - name: Run linter
       run: npm run lint
@@ -74,7 +74,7 @@ jobs:
       run: npm config set registry https://registry.npmjs.org
 
     - name: Install dependencies
-      run: npm install
+      run: npm install --legacy-peer-deps
 
     - name: Security audit
       run: npm audit --audit-level=high
