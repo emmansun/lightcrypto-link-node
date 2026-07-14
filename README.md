@@ -6,6 +6,7 @@ Transparent encrypt/decrypt on write/read, HMAC blind index for exact-match quer
 multi-DEK envelope encryption with key rotation, multi-KMS/SM-crypto support,
 and **100% interoperability** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
 
+[![codecov](https://codecov.io/github/emmansun/lightcrypto-link-node/graph/badge.svg?token=nQ733ApHBI)](https://codecov.io/github/emmansun/lightcrypto-link-node)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-brightgreen.svg)](https://nodejs.org/)
 [![Mongoose](https://img.shields.io/badge/Mongoose-8%2B-blue.svg)](https://mongoosejs.com/)
