@@ -10,6 +10,7 @@ and **BSON format compatibility** with the Java [LightCrypto-Link](https://githu
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-brightgreen.svg)](https://nodejs.org/)
 [![Mongoose](https://img.shields.io/badge/Mongoose-8%2B-blue.svg)](https://mongoosejs.com/)
+[![NPM](https://img.shields.io/npm/v/lightcrypto-link-node.svg?style=flat)](http://npm.im/lightcrypto-link-node)
 
 ---
 
@@ -271,3 +272,6 @@ lightcrypto-link-node/
 ## License
 
 [Apache License 2.0](LICENSE)
+
+[npm-downloads-image]: https://badgen.net/npm/dm/lightcrypto-link-node
+[npm-url]: https://npmjs.org/package/lightcrypto-link-node
