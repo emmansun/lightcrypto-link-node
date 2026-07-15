@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [1.1.0-beta.1] - 2026-07-14
+
 ### Added
 - **Structured type encryption** — BSON binary serialization for complex values (matching Java LightCrypto-Link):
   - `DOC`: whole-object encryption via `BsonCodec.encodeDocument()`

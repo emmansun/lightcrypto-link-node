@@ -1,14 +1,26 @@
 {
   "name": "lightcrypto-link-node",
-  "version": "1.0.0",
-  "description": "A lightweight, application-level field encryption library (ALFE) for Node.js/Mongoose and MongoDB with blind index, multi-KMS/SM-crypto support, and 100% interoperability with the Java LightCrypto-Link ecosystem. Completely bypasses libmongocrypt.",
+  "version": "1.1.0-beta.1",
+  "description": "Lightweight application-level field encryption (ALFE) for Node.js/Mongoose and MongoDB with blind index, structured type encryption (DOC/COL/MAP), multi-KMS/SM-crypto support, and BSON format compatibility with the Java LightCrypto-Link ecosystem.",
   "main": "src/index.js",
+  "files": [
+    "src/",
+    "docs/",
+    "examples/",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "test": "jest",
     "test:unit": "jest --testPathPattern=test/unit",
     "test:integration": "jest --testPathPattern=test/integration",
     "test:interop": "jest --testPathPattern=test/interoperability",
-    "lint": "eslint src/ test/"
+    "lint": "eslint src/ test/",
+    "prepublishOnly": "npm run lint && npm test"
   },
   "repository": {
     "type": "git",
@@ -23,15 +35,20 @@
     "crypto",
     "aes-256-gcm",
     "sm4",
-    "lightcrypto"
+    "lightcrypto",
+    "alfe"
   ],
-  "author": "",
+  "author": "emmansun",
   "license": "Apache-2.0",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/emmansun/lightcrypto-link-node/issues"
   },
   "homepage": "https://github.com/emmansun/lightcrypto-link-node#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "peerDependencies": {
     "mongoose": ">=8.0.0"
   },
