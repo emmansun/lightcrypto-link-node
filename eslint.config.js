@@ -22,6 +22,8 @@ module.exports = [
         URL: 'readonly',
         fetch: 'readonly',
         global: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
       }
     },
     rules: {
@@ -61,6 +63,8 @@ module.exports = [
         URL: 'readonly',
         fetch: 'readonly',
         global: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
       }
     }
   },
