@@ -61,6 +61,11 @@ describe('AesGcmEncryptor', () => {
     expect(kcv1).toMatch(/^[0-9a-f]+$/);
   });
 
+  test('computeKcv returns 32 bytes (16 ciphertext + 16 auth tag) = 64 hex chars (matches Java)', () => {
+    const kcv = encryptor.computeKcv(key);
+    expect(kcv.length).toBe(64); // 32 bytes = 64 hex chars
+  });
+
   test('computeKcv returns different values for different keys', () => {
     const key2 = crypto.randomBytes(32);
     const kcv1 = encryptor.computeKcv(key);

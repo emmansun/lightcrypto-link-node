@@ -72,7 +72,7 @@ class CryptoCodec {
   /**
    * Adapt key length for the target algorithm.
    * SM4 requires 16-byte keys; AES-256 requires 32-byte keys.
-   * If key is longer than needed, derive via SHA-256 truncation.
+   * For SM4 with 32-byte DEK, take first 16 bytes (matches Java behavior).
    * @param {Buffer} key
    * @param {string} algorithm
    * @returns {Buffer}
@@ -80,7 +80,7 @@ class CryptoCodec {
    */
   _adaptKey(key, algorithm) {
     if (algorithm === 'SM4_CBC' && Buffer.isBuffer(key) && key.length === 32) {
-      return crypto.createHash('sha256').update(key).digest().subarray(0, 16);
+      return key.subarray(0, 16);
     }
     return key;
   }

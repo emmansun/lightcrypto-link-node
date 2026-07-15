@@ -89,12 +89,20 @@ class FieldCryptoService {
     }
 
     // Scalar path (existing behavior)
-    // Serialize value
-    const serializedString = this._serializer.serializeToString(value);
-    const plaintext = Buffer.from(serializedString, 'utf8');
-
     // Resolve type marker
     const typeMarker = this._serializer.resolveTypeMarker(value, mongooseType);
+
+    // Serialize value to plaintext bytes
+    // BYTES: raw bytes (matches Java serialize(byte[])); all others: UTF-8 of serialized string
+    let plaintext;
+    let serializedString;
+    if (typeMarker === 'BYTES' && Buffer.isBuffer(value)) {
+      plaintext = value;
+      serializedString = value.toString('base64'); // for blind index only
+    } else {
+      serializedString = this._serializer.serializeToString(value);
+      plaintext = Buffer.from(serializedString, 'utf8');
+    }
 
     // Encrypt
     const ciphertext = this._codec.encrypt(dek, plaintext, algorithm);
@@ -194,6 +202,10 @@ class FieldCryptoService {
     }
 
     // Scalar path (existing behavior)
+    // BYTES: return raw decrypted bytes (matches Java); all others: UTF-8 string → deserialize
+    if (typeMarker === 'BYTES') {
+      return plaintext;
+    }
     const stringValue = plaintext.toString('utf8');
     return this._deserializer.deserialize(typeMarker, stringValue);
   }

@@ -39,6 +39,21 @@ describe('CryptoCodec', () => {
     test('unsupported algorithm throws', () => {
       expect(() => codec.encrypt(dek32, Buffer.from('x'), 'UNKNOWN')).toThrow('Unsupported algorithm');
     });
+
+    test('SM4_CBC with 32-byte DEK uses DEK[0:16] (matches Java, not SHA-256)', () => {
+      // Create a 32-byte DEK where first 16 bytes differ from SHA-256(key)[0:16]
+      const key32 = Buffer.alloc(32, 0);
+      key32.fill(0xaa, 0, 16);  // first 16 bytes = 0xaa
+      key32.fill(0xbb, 16, 32); // last 16 bytes = 0xbb
+      const key16 = key32.subarray(0, 16); // Java-style: first 16 bytes
+
+      const plaintext = Buffer.from('interop test', 'utf8');
+      // Encrypt with 32-byte key (should adapt to key[0:16])
+      const encrypted = codec.encrypt(key32, plaintext, 'SM4_CBC');
+      // Decrypt with explicit 16-byte key
+      const decrypted = codec.decrypt(key16, encrypted, 'SM4_CBC');
+      expect(decrypted.toString('utf8')).toBe('interop test');
+    });
   });
 
   describe('computeKcv', () => {

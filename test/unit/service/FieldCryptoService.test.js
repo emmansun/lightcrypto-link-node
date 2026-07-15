@@ -124,6 +124,28 @@ describe('FieldCryptoService', () => {
       const subDoc2 = service.encryptField('13800138000', 'phone', dek, hmacKey, activeKid, 'AES_256_GCM', { blindIndex: true });
       expect(subDoc1.b).toBe(subDoc2.b);
     });
+
+    test('BYTES: encrypt Buffer returns raw bytes on decrypt (matches Java serialize(byte[]))', () => {
+      const rawBytes = Buffer.from([0x00, 0xff, 0x01, 0xfe, 0x80, 0x7f]);
+      const subDoc = service.encryptField(rawBytes, 'data', dek, hmacKey, activeKid, 'AES_256_GCM');
+      expect(subDoc._t).toBe('BYTES');
+      const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
+      expect(Buffer.isBuffer(decrypted)).toBe(true);
+      expect(decrypted.equals(rawBytes)).toBe(true);
+    });
+
+    test('BYTES: plaintext is raw bytes, not base64-encoded UTF-8', () => {
+      // Verify the ciphertext, when decrypted, yields the original bytes
+      // (not the UTF-8 bytes of the base64 string representation)
+      const rawBytes = crypto.randomBytes(20);
+      const subDoc = service.encryptField(rawBytes, 'blob', dek, hmacKey, activeKid, 'AES_256_GCM');
+      // Decrypt to raw plaintext bytes
+      const cipherBuf = subDoc.c;
+      const plaintextBytes = service._codec.decrypt(dek, cipherBuf, 'AES_256_GCM');
+      // Must equal original bytes, NOT Buffer.from(base64string, 'utf8')
+      expect(plaintextBytes.equals(rawBytes)).toBe(true);
+      expect(plaintextBytes.equals(Buffer.from(rawBytes.toString('base64'), 'utf8'))).toBe(false);
+    });
   });
 
   describe('structured type: DOC', () => {

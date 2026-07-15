@@ -61,15 +61,17 @@ class AesGcmEncryptor extends SymmetricEncryptor {
 
   /**
    * Compute KCV using 12-byte zero IV and 16-byte zero block.
+   * Returns 32 bytes (16 ciphertext + 16 auth tag) as hex, matching Java.
    * @param {Buffer} key - The key to verify
-   * @returns {string} Lowercase hex string
+   * @returns {string} Lowercase hex string (64 chars = 32 bytes)
    */
   computeKcv(key) {
     const iv = Buffer.alloc(IV_LENGTH, 0);
     const zeroBlock = Buffer.alloc(16, 0);
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
     const encrypted = Buffer.concat([cipher.update(zeroBlock), cipher.final()]);
-    return encrypted.toString('hex');
+    const authTag = cipher.getAuthTag();
+    return Buffer.concat([encrypted, authTag]).toString('hex');
   }
 }
 

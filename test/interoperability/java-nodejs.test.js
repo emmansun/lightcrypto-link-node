@@ -176,9 +176,9 @@ describe('Java Interoperability', () => {
       expect(serializer.serializeToString(date)).toBe('1996-05-15');
     });
 
-    test('LocalDateTime serialization matches Java ISO_LOCAL_DATE_TIME', () => {
+    test('LocalDateTime serialization matches Java ISO_LOCAL_DATE_TIME_WITH_3MS', () => {
       const date = new Date(Date.UTC(1996, 4, 15, 14, 30, 0));
-      expect(serializer.serializeToString(date)).toBe('1996-05-15T14:30:00');
+      expect(serializer.serializeToString(date)).toBe('1996-05-15T14:30:00.000');
     });
 
     test('byte[] serialization matches Java Base64.getEncoder()', () => {

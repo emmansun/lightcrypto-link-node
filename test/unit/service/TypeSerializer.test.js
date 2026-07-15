@@ -43,12 +43,12 @@ describe('TypeSerializer', () => {
 
     test('Date (LocalDateTime): YYYY-MM-DDTHH:mm:ss format', () => {
       const date = new Date(Date.UTC(1996, 4, 15, 14, 30, 0));
-      expect(serializer.serializeToString(date)).toBe('1996-05-15T14:30:00');
+      expect(serializer.serializeToString(date)).toBe('1996-05-15T14:30:00.000');
     });
 
-    test('Date truncates milliseconds for LocalDateTime', () => {
-      const date = new Date(Date.UTC(1996, 4, 15, 14, 30, 45, 123));
-      expect(serializer.serializeToString(date)).toBe('1996-05-15T14:30:45');
+    test('Date (LocalDateTime): YYYY-MM-DDTHH:mm:ss.SSS format', () => {
+      const date = new Date(Date.UTC(1996, 4, 15, 14, 30, 0, 500));
+      expect(serializer.serializeToString(date)).toBe('1996-05-15T14:30:00.500');
     });
 
     test('null/undefined throws', () => {

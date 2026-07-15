@@ -165,10 +165,14 @@ class TypeDeserializer {
    * @private
    */
   _deserializeLocalDateTime(value) {
-    const [datePart, timePart] = value.split('T');
+    const [datePart, timePartWithMs] = value.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
+
+    const [timePart, msPart] = timePartWithMs.split('.');
     const [hours, minutes, seconds] = timePart.split(':').map(Number);
-    return new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+    
+    const milliseconds = msPart ? Number(msPart) : 0;
+    return new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds, milliseconds));
   }
 }
 
