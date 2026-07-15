@@ -64,11 +64,11 @@ describe('TypeSerializer', () => {
     });
   });
 
-  describe('serialize (Buffer)', () => {
-    test('returns Buffer from UTF-8 string', () => {
+  describe('serialize (Uint8Array)', () => {
+    test('returns Uint8Array from UTF-8 string', () => {
       const buf = serializer.serialize('hello');
-      expect(Buffer.isBuffer(buf)).toBe(true);
-      expect(buf.toString('utf8')).toBe('hello');
+      expect(buf).toBeInstanceOf(Uint8Array);
+      expect(new TextDecoder().decode(buf)).toBe('hello');
     });
   });
 

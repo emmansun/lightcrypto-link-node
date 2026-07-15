@@ -1,5 +1,7 @@
 'use strict';
 
+const encoder = new TextEncoder();
+
 /**
  * TypeSerializer - Deterministic serialization of values to strings for encryption and blind indexing.
  * Ensures cross-language (Java ↔ Node.js) consistency.
@@ -57,10 +59,10 @@ class TypeSerializer {
   /**
    * Serialize a value to a Buffer.
    * @param {*} value - The value to serialize
-   * @returns {Buffer} Serialized bytes
+   * @returns {Uint8Array} Serialized bytes
    */
   serialize(value) {
-    return Buffer.from(this.serializeToString(value), 'utf8');
+    return encoder.encode(this.serializeToString(value));
   }
 
   /**
