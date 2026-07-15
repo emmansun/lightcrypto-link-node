@@ -4,7 +4,7 @@ Lightweight application-level field encryption (ALFE) for Node.js/Mongoose and M
 
 Transparent encrypt/decrypt on write/read, HMAC blind index for exact-match queries,
 multi-DEK envelope encryption with key rotation, multi-KMS/SM-crypto support,
-and **100% interoperability** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
+and **BSON format compatibility** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
 
 [![codecov](https://codecov.io/github/emmansun/lightcrypto-link-node/graph/badge.svg?token=nQ733ApHBI)](https://codecov.io/github/emmansun/lightcrypto-link-node)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -110,6 +110,9 @@ console.log(found.phone); // '13800138000'
 
 // Blind index queries work transparently
 const result = await User.findOne({ phone: '13800138000' });
+
+// NOTE: Querying encrypted fields WITHOUT blindIndex throws an error.
+// Enable blindIndex: true on queryable fields, or use a backfill migration.
 ```
 
 ## Schema Options
@@ -155,6 +158,29 @@ address: {
 // Nested path in array elements — items[].price encrypted per-element
 items: [{ sku: String, price: { type: Number, encrypt: true } }]
 ```
+
+## Migration from Plaintext Data
+
+When introducing encryption to an existing system with plaintext MongoDB data:
+
+- **Reads**: Plaintext historical values pass through safely (only encrypted sub-documents are decrypted).
+- **Writes**: Re-saving a document automatically encrypts plaintext fields (lazy migration).
+- **Queries**: Blind index queries only match encrypted records. Querying an encrypted field without `blindIndex: true` throws an error.
+
+Use the backfill runner to migrate all historical records:
+
+```bash
+# Dry-run: estimate how many records need migration
+node examples/plaintext-backfill.js --dry-run
+
+# Run migration with batch size control
+node examples/plaintext-backfill.js --batch-size=500
+
+# Resume from last cursor if interrupted
+node examples/plaintext-backfill.js --batch-size=500 --start-after-id=6691a2b3c4d5e6f7a8b9c0d1
+```
+
+See [examples/plaintext-backfill.js](examples/plaintext-backfill.js) for full configuration options.
 
 ## Rotation
 
@@ -205,6 +231,7 @@ See [examples/](examples/) for runnable demos:
 
 ```bash
 node examples/basic-crud.js          # CRUD with blind index
+node examples/plaintext-backfill.js  # Migrate plaintext data to encrypted
 node examples/multi-algorithm.js     # AES-GCM, AES-CBC, SM4-CBC
 node examples/key-rotation.js        # DEK rotation
 node examples/config-from-env.js     # Configuration sources
@@ -218,7 +245,7 @@ node examples/alibaba-kms.js         # Alibaba Cloud KMS
 ```text
 lightcrypto-link-node/
 ├── src/
-│   ├── crypto/          # Encryptor implementations (AES-GCM, AES-CBC, SM4-CBC)
+│   ├── crypto/          # Encryptor implementations (AES-GCM, AES-CBC, SM4-CBC, BsonCodec)
 │   ├── service/         # KeyVaultService, FieldCryptoService, TypeSerializer
 │   ├── provider/        # CMK providers (Local, Azure, Alibaba)
 │   ├── plugin/          # Mongoose plugin and query rewriter

@@ -7,7 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Structured type encryption** — BSON binary serialization for complex values (matching Java LightCrypto-Link):
+  - `DOC`: whole-object encryption via `BsonCodec.encodeDocument()`
+  - `COL`: whole-array encryption via `BsonCodec.encodeCollection()` (wraps as `{ _v: [...] }`)
+  - `MAP`: decryption of Java-encrypted map values
+  - Element-level array encryption (each element encrypted independently)
+- **Nested path encryption** — encrypt specific fields inside sub-documents or array elements:
+  - Sub-document: `address.street` encrypted, `address.city` visible
+  - Array elements: `items[].price` encrypted per-element (Java `LIST_ITER` + `FIELD`)
+- **Encryption mode control** — `AUTO` (default), `ELEMENT`, `WHOLE` with field-type-specific behavior
+- **Query validation** — throws when querying an encrypted field without `blindIndex: true` (matches Java's `UnsupportedOperationException`)
+- **Plaintext backfill runner** — `examples/plaintext-backfill.js` for migrating legacy plaintext data:
+  - Dry-run mode to estimate candidate volume
+  - Batch size control and cursor-based resume
+  - Progress reporting per batch
+- **ProgrammaticCryptoService** extended for structured values:
+  - `encryptValue()` detects objects/arrays → DOC/COL sub-documents
+  - `decryptValue()` handles DOC/COL/MAP type markers
+  - `decryptDocument()` supports structured encrypted fields
+
+### Fixed
+- **BYTES serialization** — now encrypts raw bytes directly (matching Java `serialize(byte[])`), instead of base64-encoded UTF-8
+- **SM4-CBC key adaptation** — 32-byte DEK now uses `DEK[0:16]` (matching Java), instead of `SHA-256(DEK)[0:16]`
+- **AES-GCM KCV** — now returns 32 bytes (16 ciphertext + 16 auth tag = 64 hex chars), matching Java
+
+### Changed
+- README: softened "100% interoperability" to "BSON format compatible"
+- Type serialization: `byte[]` documented as raw bytes (was "Base64")
 
 ---
 
@@ -24,7 +51,7 @@ _Nothing yet._
   - Full compatibility with Java LightCrypto-Link `TypeSerializer`
   - Support for: String, Integer, Long, Double, BigDecimal, Boolean
   - Date types: LocalDate (YYYY-MM-DD), LocalDateTime (YYYY-MM-DDTHH:mm:ss)
-  - Special types: byte[] (Base64), Enum (with fully qualified class name)
+  - Special types: byte[] (raw bytes), Enum (with fully qualified class name)
   - Deterministic serialization for blind indexing
 
 - **Type Deserialization System**

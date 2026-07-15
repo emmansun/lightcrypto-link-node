@@ -174,6 +174,32 @@ describe('Integration: Mongoose Plugin + KeyVault + Field Encryption', () => {
       // Same phone number → same blind index (deterministic)
       expect(blindIndex1).toBe(blindIndex2);
     });
+
+    test('querying encrypted field without blindIndex throws (matches Java behavior)', async () => {
+      await new UserModel({ name: 'Alice', phone: '13800138000', ssn: '123-45-6789' }).save();
+
+      // ssn has encrypt: true but blindIndex: false
+      await expect(UserModel.findOne({ ssn: '123-45-6789' }))
+        .rejects.toThrow(/Cannot query encrypted field 'ssn' without blindIndex/);
+    });
+
+    test('querying non-encrypted field does not throw', async () => {
+      await new UserModel({ name: 'Alice', phone: '13800138000' }).save();
+
+      // name is not encrypted
+      const found = await UserModel.findOne({ name: 'Alice' });
+      expect(found).not.toBeNull();
+      expect(found.name).toBe('Alice');
+    });
+
+    test('querying by _id does not throw even with encrypted fields present', async () => {
+      const user = new UserModel({ name: 'Alice', phone: '13800138000' });
+      await user.save();
+
+      const found = await UserModel.findOne({ _id: user._id });
+      expect(found).not.toBeNull();
+      expect(found.phone).toBe('13800138000');
+    });
   });
 
   describe('Key Rotation', () => {
