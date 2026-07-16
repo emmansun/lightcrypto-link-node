@@ -15,7 +15,6 @@
  * Optional:
  *   LCL_AZURE_CMK_VERSION      (auto-resolved if omitted)
  *   LCL_AZURE_PUBLIC_KEY_PEM   (auto-resolved if omitted)
- *   LCL_AZURE_ALGORITHM        (default: RSA-OAEP-256)
  */
 
 const crypto = require('crypto');

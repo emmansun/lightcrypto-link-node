@@ -20,6 +20,22 @@ class CmkProvider {
   }
 
   /**
+   * @param {string} lclAlgorithm - The algorithm identifier to check
+   * @returns {boolean} True if the algorithm is supported, false otherwise
+   */
+  supportsAlgorithm(lclAlgorithm) {
+    return false;
+  }
+
+  /**
+   * @param {string} lclAlgorithm - The algorithm identifier to map
+   * @returns {string} The mapped algorithm identifier, or the original if no mapping is found
+   */
+  mapAlgorithm(lclAlgorithm) {
+    return lclAlgorithm;
+  }
+
+  /**
    * Get the current CMK key version.
    * Returns the version identifier used for wrap/unwrap operations.
    * Providers without versioning (e.g., local CMK) return null.

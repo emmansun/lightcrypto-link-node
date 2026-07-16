@@ -44,7 +44,7 @@ describe('LocalCmkProvider', () => {
 
     const wrapped = await provider.wrap(plaintextKey);
     expect(wrapped.ciphertext).toBeInstanceOf(Buffer);
-    expect(wrapped.algorithm).toBe('aes-256-gcm');
+    expect(wrapped.algorithm).toBe('AES-256-GCM');
     expect(wrapped.metadata).toEqual({});
 
     const unwrapped = await provider.unwrap(wrapped);

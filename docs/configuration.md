@@ -91,7 +91,6 @@ const provider = new AzureKmsProvider({
   vaultUrl: 'https://vault.vault.azure.net',      // Vault URL
   cmkVersion: 'key-version-id',                   // Optional: auto-resolved if omitted
   publicKeyPem: '-----BEGIN PUBLIC KEY-----...',   // Optional: auto-resolved for local wrap
-  algorithm: 'RSA-OAEP-256',                      // Optional: RSA-OAEP-256 (default) or RSA-OAEP
   // credential: customCredential                  // Optional: custom Azure credential
 });
 ```
@@ -121,8 +120,7 @@ const provider = new AlibabaKmsProvider({
   accessKeyId: process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
   accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
   cmkVersion: 'key-version-id',                   // Optional: auto-resolved for asymmetric
-  publicKeyPem: '...',                            // Optional: auto-resolved for local asymmetric wrap
-  asymmetricAlgorithm: 'RSAES_OAEP_SHA_256'       // Optional: default RSAES_OAEP_SHA_256
+  publicKeyPem: '...'                             // Optional: auto-resolved for local asymmetric wrap
 });
 ```
 

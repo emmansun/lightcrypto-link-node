@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const CmkProvider = require('./CmkProvider');
+const { LclAlgorithms } = require('./LclAlgorithms');
 
 /**
  * Alibaba Cloud KMS CMK provider for China compliance.
@@ -32,7 +33,6 @@ class AlibabaKmsProvider extends CmkProvider {
    * @param {string} [config.accessKeyId] - Access key ID
    * @param {string} [config.accessKeySecret] - Access key secret
    * @param {string} [config.publicKeyPem] - RSA public key in PEM format (for local asymmetric wrap)
-   * @param {string} [config.asymmetricAlgorithm='RSAES_OAEP_SHA_256'] - Algorithm for asymmetric ops
    */
   constructor(config) {
     super();
@@ -47,7 +47,6 @@ class AlibabaKmsProvider extends CmkProvider {
     this._accessKeyId = config.accessKeyId;
     this._accessKeySecret = config.accessKeySecret;
     this._publicKeyPem = config.publicKeyPem || null;
-    this._asymmetricAlgorithm = config.asymmetricAlgorithm || 'RSAES_OAEP_SHA_256';
     this._client = null;
 
     if (this._keyType !== 'symmetric' && this._keyType !== 'asymmetric') {
@@ -61,6 +60,20 @@ class AlibabaKmsProvider extends CmkProvider {
 
   getPublicReference() {
     return this._keyId;
+  }
+
+  supportsAlgorithm(lclAlgorithm) {
+    return lclAlgorithm === LclAlgorithms.RSA_OAEP_256
+            || lclAlgorithm === LclAlgorithms.KMS_DATA_KEY;
+  }
+
+  mapAlgorithm(lclAlgorithm) {
+    if (lclAlgorithm === LclAlgorithms.RSA_OAEP_256) {
+      return 'RSAES_OAEP_SHA_256'
+    } else if (lclAlgorithm === LclAlgorithms.KMS_DATA_KEY) {
+      return 'KMS_DATA_KEY'
+    }
+    return lclAlgorithm;
   }
 
   /**
@@ -157,18 +170,6 @@ class AlibabaKmsProvider extends CmkProvider {
   }
 
   /**
-   * Map asymmetric algorithm name to Node.js crypto oaepHash.
-   * @private
-   */
-  _mapOaepHash(algorithm) {
-    const map = {
-      RSAES_OAEP_SHA_1: 'sha1',
-      RSAES_OAEP_SHA_256: 'sha256'
-    };
-    return map[algorithm] || 'sha256';
-  }
-
-  /**
    * Wrap a key using Alibaba Cloud KMS.
    * 
    * **Symmetric key**: Calls Alibaba Encrypt API.
@@ -190,18 +191,17 @@ class AlibabaKmsProvider extends CmkProvider {
 
     if (this._keyType === 'asymmetric' && this._publicKeyPem) {
       // Local RSA-OAEP encryption using public key
-      const oaepHash = this._mapOaepHash(this._asymmetricAlgorithm);
       const ciphertext = crypto.publicEncrypt(
         {
           key: this._publicKeyPem,
           padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash
+          oaepHash: 'sha256'
         },
         plaintextKey
       );
       return {
         ciphertext,
-        algorithm: this._asymmetricAlgorithm,
+        algorithm: LclAlgorithms.RSA_OAEP_256,
         metadata: {
           keyId: this._keyId,
           keyType: 'asymmetric',
@@ -228,7 +228,7 @@ class AlibabaKmsProvider extends CmkProvider {
       const keyVersionId = response.body.keyVersionId || null;
       return {
         ciphertext: Buffer.from(response.body.ciphertextBlob, 'base64'),
-        algorithm: 'ALIBABA_KMS_SYMMETRIC',
+        algorithm: LclAlgorithms.KMS_DATA_KEY,
         metadata: {
           keyId: this._keyId,
           keyType: 'symmetric',
@@ -238,24 +238,7 @@ class AlibabaKmsProvider extends CmkProvider {
       };
     }
 
-    // Asymmetric remote: call AsymmetricEncrypt API with keyVersionId
-    const request = new Kms20160120.AsymmetricEncryptRequest({
-      keyId: this._keyId,
-      keyVersionId: this._cmkVersion,
-      plaintext: plaintextBase64,
-      algorithm: this._asymmetricAlgorithm
-    });
-    const response = await client.asymmetricEncrypt(request);
-    return {
-      ciphertext: Buffer.from(response.body.ciphertextBlob, 'base64'),
-      algorithm: this._asymmetricAlgorithm,
-      metadata: {
-        keyId: this._keyId,
-        keyType: 'asymmetric',
-        cmkVersion: this._cmkVersion,
-        localWrap: false
-      }
-    };
+    throw new Error('AlibabaKmsProvider: asymmetric wrap is not supported');
   }
 
   /**
@@ -295,12 +278,13 @@ class AlibabaKmsProvider extends CmkProvider {
 
     const client = await this._ensureClient();
     const Kms20160120 = require('@alicloud/kms20160120');
+    const kmsAlgorithm = this.mapAlgorithm(wrappedKey.algorithm);
 
     const request = new Kms20160120.AsymmetricDecryptRequest({
       keyId: this._keyId,
       keyVersionId,
       ciphertextBlob: ciphertextBase64,
-      algorithm: this._asymmetricAlgorithm
+      algorithm: kmsAlgorithm
     });
     const response = await client.asymmetricDecrypt(request);
     return Buffer.from(response.body.plaintext, 'base64');

@@ -215,42 +215,18 @@ describe('AlibabaKmsProvider', () => {
         keyId: 'key-456',
         keyType: 'asymmetric',
         cmkVersion: 'ver-xyz-789',
-        publicKeyPem: rsaKeyPair.publicKey,
-        asymmetricAlgorithm: 'RSAES_OAEP_SHA_256'
+        publicKeyPem: rsaKeyPair.publicKey
       });
 
       const plaintextKey = crypto.randomBytes(32);
       const wrapped = await provider.wrap(plaintextKey);
 
       expect(wrapped.ciphertext).toBeInstanceOf(Buffer);
-      expect(wrapped.algorithm).toBe('RSAES_OAEP_SHA_256');
+      expect(wrapped.algorithm).toBe('RSA-OAEP-256');
       expect(wrapped.metadata.keyId).toBe('key-456');
       expect(wrapped.metadata.keyType).toBe('asymmetric');
       expect(wrapped.metadata.cmkVersion).toBe('ver-xyz-789');
       expect(wrapped.metadata.localWrap).toBe(true);
-    });
-
-    test('supports SHA-1 OAEP hash', async () => {
-      const provider = new AlibabaKmsProvider({
-        keyId: 'key-789',
-        keyType: 'asymmetric',
-        publicKeyPem: rsaKeyPair.publicKey,
-        asymmetricAlgorithm: 'RSAES_OAEP_SHA_1'
-      });
-
-      const plaintextKey = crypto.randomBytes(32);
-      const wrapped = await provider.wrap(plaintextKey);
-
-      const decrypted = crypto.privateDecrypt(
-        {
-          key: rsaKeyPair.privateKey,
-          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash: 'sha1'
-        },
-        wrapped.ciphertext
-      );
-
-      expect(decrypted.equals(plaintextKey)).toBe(true);
     });
 
     test('supports SHA-256 OAEP hash', async () => {

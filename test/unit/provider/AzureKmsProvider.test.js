@@ -76,11 +76,6 @@ describe('AzureKmsProvider', () => {
       expect(provider.getCmkVersion()).toBeNull();
     });
 
-    test('rejects unsupported algorithm', () => {
-      expect(() => new AzureKmsProvider({ keyName: 'my-key', algorithm: 'RSA-PKCS1' }))
-        .toThrow(/unsupported algorithm/);
-    });
-
     test('accepts RSA-OAEP-256 algorithm', () => {
       expect(() => new AzureKmsProvider({ keyName: 'my-key', algorithm: 'RSA-OAEP-256' }))
         .not.toThrow();
@@ -188,31 +183,6 @@ describe('AzureKmsProvider', () => {
       const wrapped = await provider.wrap(crypto.randomBytes(32));
       expect(wrapped.algorithm).toBe('RSA-OAEP-256');
     });
-
-    test('explicit RSA-OAEP uses SHA-1 for backward compatibility', async () => {
-      const provider = new AzureKmsProvider({
-        keyName: 'my-key',
-        cmkVersion: 'v1',
-        publicKeyPem: rsaKeyPair.publicKey,
-        algorithm: 'RSA-OAEP'
-      });
-
-      const plaintextKey = crypto.randomBytes(32);
-      const wrapped = await provider.wrap(plaintextKey);
-
-      expect(wrapped.algorithm).toBe('RSA-OAEP');
-
-      // Verify decryptable with SHA-1
-      const decrypted = crypto.privateDecrypt(
-        {
-          key: rsaKeyPair.privateKey,
-          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash: 'sha1'
-        },
-        wrapped.ciphertext
-      );
-      expect(decrypted.equals(plaintextKey)).toBe(true);
-    });
   });
 
   describe('Unwrap with cmkVersion', () => {
@@ -271,7 +241,7 @@ describe('AzureKmsProvider', () => {
   });
 
   describe('Auto-Resolution of Key Metadata', () => {
-    test('auto-resolves cmkVersion via getKey() when not configured', async () => {
+    test('throws when publicKeyPem cannot be resolved (remote wrap not implemented)', async () => {
       const { provider } = createMockedProvider(
         { keyName: 'my-key', vaultUrl: 'https://vault.vault.azure.net' },
         () => ({ properties: { version: 'auto-resolved-v42' }, key: null })
@@ -280,11 +250,9 @@ describe('AzureKmsProvider', () => {
       expect(provider.getCmkVersion()).toBeNull();
 
       const plaintextKey = crypto.randomBytes(32);
-      const wrapped = await provider.wrap(plaintextKey);
-
-      expect(wrapped.metadata.cmkVersion).toBe('auto-resolved-v42');
-      expect(wrapped.metadata.localWrap).toBe(false); // No PEM resolved → remote mode
-      expect(provider.getCmkVersion()).toBe('auto-resolved-v42');
+      // Remote wrap mode is not implemented; throws when publicKeyPem is unavailable
+      await expect(provider.wrap(plaintextKey))
+        .rejects.toThrow('missing publicKeyPem for local wrap');
     });
 
     test('auto-resolves publicKeyPem from JWK material', async () => {

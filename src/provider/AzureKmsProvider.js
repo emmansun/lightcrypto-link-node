@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const CmkProvider = require('./CmkProvider');
+const { LclAlgorithms } = require('./LclAlgorithms');
 
 /**
  * Azure Key Vault CMK provider using RSA-OAEP for asymmetric key wrapping.
@@ -27,7 +28,6 @@ class AzureKmsProvider extends CmkProvider {
    * @param {string} [config.vaultUrl] - Azure Key Vault URL (e.g. https://myvault.vault.azure.net)
    * @param {string} [config.cmkVersion] - Key version string (if not provided, latest is resolved)
    * @param {string} [config.publicKeyPem] - RSA public key in PEM format (for local wrap)
-   * @param {string} [config.algorithm='RSA-OAEP-256'] - RSA-OAEP variant: 'RSA-OAEP' (SHA-1) or 'RSA-OAEP-256' (SHA-256, recommended)
    * @param {Object} [config.credential] - Azure credential (DefaultAzureCredential)
    */
   constructor(config) {
@@ -40,12 +40,7 @@ class AzureKmsProvider extends CmkProvider {
     this._cmkVersion = config.cmkVersion || null;
     this._publicKeyPem = config.publicKeyPem || null;
     this._credential = config.credential || null;
-    this._algorithm = config.algorithm || 'RSA-OAEP-256';
     this._keyClient = null;
-
-    if (this._algorithm !== 'RSA-OAEP' && this._algorithm !== 'RSA-OAEP-256') {
-      throw new Error(`AzureKmsProvider: unsupported algorithm '${this._algorithm}'. Must be 'RSA-OAEP' or 'RSA-OAEP-256'`);
-    }
   }
 
   getProviderId() {
@@ -54,6 +49,10 @@ class AzureKmsProvider extends CmkProvider {
 
   getPublicReference() {
     return this._keyName;
+  }
+
+  supportsAlgorithm(lclAlgorithm) {
+    return lclAlgorithm === LclAlgorithms.RSA_OAEP_256;
   }
 
   /**
@@ -143,15 +142,6 @@ class AzureKmsProvider extends CmkProvider {
   }
 
   /**
-   * Map Azure algorithm name to Node.js crypto oaepHash.
-   * RSA-OAEP → sha1, RSA-OAEP-256 → sha256
-   * @private
-   */
-  _oaepHash() {
-    return this._algorithm === 'RSA-OAEP-256' ? 'sha256' : 'sha1';
-  }
-
-  /**
    * Wrap a key using RSA-OAEP.
    * 
    * If publicKeyPem is configured, performs encryption **locally** using Node.js crypto
@@ -172,25 +162,18 @@ class AzureKmsProvider extends CmkProvider {
         {
           key: this._publicKeyPem,
           padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-          oaepHash: this._oaepHash()
+          oaepHash: 'sha256'
         },
         plaintextKey
       );
       return {
         ciphertext,
-        algorithm: this._algorithm,
+        algorithm: LclAlgorithms.RSA_OAEP_256,
         metadata: { keyName: this._keyName, cmkVersion, localWrap: true }
       };
     }
 
-    // Remote mode: call Azure KMS via versioned CryptographyClient
-    const cryptoClient = this._getCryptoClient(cmkVersion);
-    const result = await cryptoClient.encrypt(this._algorithm, plaintextKey);
-    return {
-      ciphertext: Buffer.from(result.result),
-      algorithm: this._algorithm,
-      metadata: { keyName: this._keyName, cmkVersion, localWrap: false }
-    };
+    throw new Error('AzureKmsProvider: missing publicKeyPem for local wrap');
   }
 
   /**
@@ -209,10 +192,13 @@ class AzureKmsProvider extends CmkProvider {
     if (!cmkVersion) {
       throw new Error('AzureKmsProvider: cmkVersion is required for unwrap. Ensure it was stored during wrap.');
     }
-    // Read algorithm from wrapped key metadata, fall back to provider config
-    const algorithm = (wrappedKey.metadata && wrappedKey.metadata.algorithm) || this._algorithm;
+    // Read algorithm from wrapped key
+    const algorithm = wrappedKey.algorithm;
+    if (!algorithm) {
+      throw new Error('AzureKmsProvider: algorithm is required for unwrap. Ensure it was stored during wrap.');
+    }
     const cryptoClient = this._getCryptoClient(cmkVersion);
-    const result = await cryptoClient.decrypt({ algorithm, ciphertext: wrappedKey.ciphertext });
+    const result = await cryptoClient.decrypt({ algorithm: this.mapAlgorithm(algorithm), ciphertext: wrappedKey.ciphertext });
     return Buffer.from(result.result);
   }
 }

@@ -98,7 +98,6 @@ class FieldCryptoService {
     let serializedString;
     if (typeMarker === 'BYTES' && Buffer.isBuffer(value)) {
       plaintext = value;
-      serializedString = value.toString('base64'); // for blind index only
     } else {
       serializedString = this._serializer.serializeToString(value);
       plaintext = Buffer.from(serializedString, 'utf8');
@@ -118,6 +117,10 @@ class FieldCryptoService {
 
     // Compute blind index if enabled
     if (blindIndex) {
+      // In fact, should not build blind index on BYTES type, so postpone serialization to string
+      if (typeMarker === 'BYTES' && Buffer.isBuffer(value)) {
+        serializedString = value.toString('base64'); // for blind index only
+      }
       subDoc.b = this._codec.generateBlindIndex(hmacKey, effectiveFieldName, serializedString);
     }
 

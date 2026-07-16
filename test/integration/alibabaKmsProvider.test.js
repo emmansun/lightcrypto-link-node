@@ -114,8 +114,7 @@ describeOrSkip('Integration: AlibabaKmsProvider + Mongoose Plugin', () => {
           region,
           endpoint,
           accessKeyId: process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
-          accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
-          asymmetricAlgorithm: 'RSAES_OAEP_SHA_256'
+          accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET
           // cmkVersion and publicKeyPem intentionally omitted
         });
 

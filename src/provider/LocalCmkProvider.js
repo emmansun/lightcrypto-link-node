@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const CmkProvider = require('./CmkProvider');
+const { LclAlgorithms } = require('./LclAlgorithms');
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -45,6 +46,17 @@ class LocalCmkProvider extends CmkProvider {
     return this._publicReference;
   }
 
+  supportsAlgorithm(lclAlgorithm) {
+    return lclAlgorithm === LclAlgorithms.AES_256_GCM;
+  }
+
+  mapAlgorithm(lclAlgorithm) {
+    if (lclAlgorithm === LclAlgorithms.AES_256_GCM) {
+      return ALGORITHM;
+    }
+    return null;
+  }
+
   /**
    * Wrap a key using AES-256-GCM.
    * @param {Buffer} plaintextKey - Key to wrap
@@ -59,7 +71,7 @@ class LocalCmkProvider extends CmkProvider {
 
     return {
       ciphertext,
-      algorithm: ALGORITHM,
+      algorithm: LclAlgorithms.AES_256_GCM,
       metadata: {}
     };
   }
@@ -73,6 +85,9 @@ class LocalCmkProvider extends CmkProvider {
   async unwrap(wrappedKey) {
     if (!wrappedKey || !Buffer.isBuffer(wrappedKey.ciphertext)) {
       throw new Error('Invalid wrapped key: ciphertext must be a Buffer');
+    }
+    if (!this.supportsAlgorithm(wrappedKey.algorithm)) {
+      throw new Error(`Invalid algorithm: ${wrappedKey.algorithm}`);
     }
     const data = wrappedKey.ciphertext;
     const minLength = IV_LENGTH + AUTH_TAG_LENGTH;

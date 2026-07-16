@@ -40,8 +40,7 @@ async function main() {
     endpoint: process.env.LCL_ALIBABA_KMS_ENDPOINT || 'kms.cn-hangzhou.aliyuncs.com',
     accessKeyId: process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
     accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
-    publicKeyPem: process.env.LCL_ALIBABA_KMS_PUBLIC_KEY_PEM || null,  // For local asymmetric wrap
-    asymmetricAlgorithm: 'RSAES_OAEP_SHA_256'
+    publicKeyPem: process.env.LCL_ALIBABA_KMS_PUBLIC_KEY_PEM || null  // For local asymmetric wrap
   });
 
   console.log('Provider ID:', alibabaProvider.getProviderId());  // 'alibaba-kms'
