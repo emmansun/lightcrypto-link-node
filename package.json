@@ -16,9 +16,9 @@
   },
   "scripts": {
     "test": "jest",
-    "test:unit": "jest --testPathPattern=test/unit",
-    "test:integration": "jest --testPathPattern=test/integration",
-    "test:interop": "jest --testPathPattern=test/interoperability",
+    "test:unit": "jest test/unit",
+    "test:integration": "jest test/integration",
+    "test:interop": "jest test/interoperability",
     "lint": "eslint src/ test/",
     "prepublishOnly": "npm run lint && npm test"
   },
