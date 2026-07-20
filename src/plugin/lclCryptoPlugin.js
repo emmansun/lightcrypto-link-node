@@ -280,9 +280,8 @@ function prepareEncryptedSchema(definition) {
         isSubDocArray: isSubDocArray(pathDef)
       };
 
-      const { encrypt, blindIndex, fieldName, mode, ...rest } = pathDef;
-      // Keep the array (shorthand) for Mongoose
-      const arr = [...rest];
+      // Keep the array elements (shorthand) for Mongoose, stripping custom props
+      const arr = pathDef.filter(() => true);
       processed[pathName] = arr;
       continue;
     }

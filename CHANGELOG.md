@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- NPM version badge in README
+
+### Changed
+- **TypeSerializer**: `serialize()` now uses `TextEncoder.encode()` instead of `Buffer.from(string, 'utf8')` for better performance (returns `Uint8Array`)
+- **ESLint**: Added `TextEncoder`/`TextDecoder` to source and test globals
+- **CMK providers**: Aligned algorithm identifiers using `LclAlgorithms` constants:
+  - `LocalCmkProvider`: returns `AES-256-GCM` (was lowercase `aes-256-gcm`)
+  - `AzureKmsProvider`: unified to `RSA-OAEP-256` (SHA-256 only, removed SHA-1 support)
+  - `AlibabaKmsProvider`: simplified asymmetric wrap to local-only mode
+- **docs/cmk-provider.md**: Full rewrite with provider details, auto-resolution behavior, config examples
+
+### Fixed
+- **Tests**: Removed obsolete tests (unsupported algorithm validation, RSA-OAEP SHA-1, remote wrap mode); fixed `AES-256-GCM` case mismatch
 
 ---
 
