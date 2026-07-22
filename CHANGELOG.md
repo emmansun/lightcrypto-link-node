@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-07-22
+## [1.1.0] - 2026-07-20
 
 ### Added
 - **SPI Layer (src/spi/)** — Pluggable storage abstraction aligned with Java `lcl-spi`:
