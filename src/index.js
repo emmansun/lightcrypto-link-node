@@ -32,6 +32,21 @@ const LclConfig = require('./config/LclConfig');
 const { lclCryptoPlugin, prepareEncryptedSchema } = require('./plugin/lclCryptoPlugin');
 const { rewriteQuery } = require('./plugin/queryRewriter');
 
+// Bootstrap
+const {
+  BootstrapEngine,
+  BootstrapContext,
+  BootstrapResult,
+  PhaseResult,
+  BootstrapTimeoutError,
+  KatRunner,
+  KatVectorLoader,
+  ConfigValidationCheck,
+  KmsReachabilityCheck,
+  VaultReachabilityCheck,
+  createDefaultPhases
+} = require('./bootstrap');
+
 // SPI layer
 const StorageAdapter = require('./spi/StorageAdapter');
 const DocumentAccessor = require('./spi/DocumentAccessor');
@@ -111,5 +126,18 @@ module.exports = {
   MongooseStorageAdapter,
   MongooseDocumentAccessor,
   BsonStructuredValueCodec,
-  MongooseQueryTransformer
+  MongooseQueryTransformer,
+
+  // Bootstrap
+  BootstrapEngine,
+  BootstrapContext,
+  BootstrapResult,
+  PhaseResult,
+  BootstrapTimeoutError,
+  KatRunner,
+  KatVectorLoader,
+  ConfigValidationCheck,
+  KmsReachabilityCheck,
+  VaultReachabilityCheck,
+  createDefaultPhases
 };

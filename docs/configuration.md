@@ -190,3 +190,53 @@ The default `MongooseStorageAdapter` produces `{ c, _e: 1, _t, b? }` sub-documen
 - **Whole-array (COL)**: The entire array is serialized as BSON and encrypted as one ciphertext. More compact but individual elements cannot be queried.
 - **Whole-object (DOC)**: The entire sub-document is serialized as BSON and encrypted. Internal fields cannot be queried individually.
 - **Nested path**: Only specific fields within a sub-document or array element are encrypted, leaving other fields visible for querying.
+
+## Bootstrap Self-Check
+
+The plugin supports an optional bootstrap self-check that runs at startup to verify encryption primitives, KMS connectivity, and Vault accessibility before processing any data.
+
+### Enabling Bootstrap
+
+```javascript
+// Enable with default phases (recommended for production)
+schema.plugin(lclCryptoPlugin, {
+  cmkProvider,
+  vaultStore,
+  bootstrap: true
+});
+
+// Custom configuration
+schema.plugin(lclCryptoPlugin, {
+  cmkProvider,
+  vaultStore,
+  bootstrap: {
+    strictMode: false,      // tolerant mode: RECOVERABLE failures → DEGRADED instead of FAILED
+    timeoutMs: 10000,       // total bootstrap timeout (default: 15000ms)
+    phases: customPhases,   // override default phases
+    onEvent: (name, detail) => console.log(name, detail)  // event callback
+  }
+});
+```
+
+### Default Phases
+
+| Phase | Name | Failure Class | Description |
+|-------|------|---------------|-------------|
+| BOOT-1 | Config Validation | FATAL | Validates cmkProvider is present and getProviderId() works |
+| BOOT-2 | KMS Reachability | RECOVERABLE | Probes KMS via getPublicReference() |
+| BOOT-3 | Vault Reachability | RECOVERABLE | Probes VaultStore via exists() |
+| BOOT-4 | KAT | FATAL | Verifies encryption, blind index, and KCV using golden vectors |
+
+### Failure Classes
+
+- **FATAL** — Immediately aborts bootstrap (e.g., KAT failure = corrupted crypto library)
+- **RECOVERABLE** — Retries up to 3 times with exponential backoff (100/200/400ms); escalates to FATAL in strict mode
+- **ADVISORY** — Logs warning and continues
+
+### Result Status
+
+- `READY` — All checks passed
+- `FAILED` — A FATAL check failed (plugin throws Error, blocking initialization)
+- `DEGRADED` — A RECOVERABLE check failed in tolerant mode (functionality may be limited)
+
+> **Note:** Bootstrap is disabled by default (`bootstrap: false`). Enable it in production for fail-fast behavior.

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "bi-001",
+    "input": {
+      "masterHmacKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "namespace": "default.default.User#phone",
+      "fieldName": "phone",
+      "plaintext": "13800138000",
+      "normalization": "trim+lowercase"
+    },
+    "expected": {
+      "derivedHmacKeyHex": "57104a0311b6ada1f9ab189469b1966aa4f6d828ec4ee0deed6b2e5f80d1e323",
+      "blindIndexBase64url": "ylXcNVT8lNaPzZyV_2JQqpEBxx4_KSnGMhW-C01kV_E"
+    }
+  },
+  {
+    "id": "bi-002",
+    "input": {
+      "masterHmacKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "namespace": "default.default.User#email",
+      "fieldName": "email",
+      "plaintext": "  Test@Example.COM  ",
+      "normalization": "trim+lowercase"
+    },
+    "expected": {
+      "derivedHmacKeyHex": "5625aac1ae2d4912352690e9fc435ec85ec7740cb780491857ccb2a870742edc",
+      "blindIndexBase64url": "ZhiHFOpL3dhka9JCAX0rL8gNWDYGhnLjrk5qNBlGm44"
+    }
+  },
+  {
+    "id": "bi-003",
+    "input": {
+      "masterHmacKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "namespace": "tenantA.app.User#ssn",
+      "fieldName": "ssn",
+      "plaintext": "123-45-6789",
+      "normalization": "trim+lowercase"
+    },
+    "expected": {
+      "derivedHmacKeyHex": "20cbaf85a5eaedceb98d956966802375d3b3b467a3edd13e485d998691512dd5",
+      "blindIndexBase64url": "FK02obW0ivVSFEvydDUxLq4s-qOWMq7e9D0wtUp_9dA"
+    }
+  },
+  {
+    "id": "bi-004",
+    "input": {
+      "masterHmacKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "namespace": "tenantB.app.User#ssn",
+      "fieldName": "ssn",
+      "plaintext": "123-45-6789",
+      "normalization": "trim+lowercase"
+    },
+    "expected": {
+      "derivedHmacKeyHex": "d5c9b233ac418f598f7c15298c0fc86f5be67cc317360fc06ce16a21b174f6b4",
+      "blindIndexBase64url": "Tyi7TbP9nypmTo9OqddBxjsplb9S_GbRLtC-yLzMZ6s"
+    }
+  },
+  {
+    "id": "bi-005",
+    "input": {
+      "masterHmacKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "namespace": "default.default.Order#total",
+      "fieldName": "total",
+      "plaintext": "99.99",
+      "normalization": "trim+lowercase"
+    },
+    "expected": {
+      "derivedHmacKeyHex": "163af27f1bef1da23ccee1e47c2918535bba2d8aec35b8ac4db3f166e5fe788d",
+      "blindIndexBase64url": "luLBPZ7YAJBXyCfIb4g5el-AABK9hi2t8HezUe-2Db4"
+    }
+  }
+]

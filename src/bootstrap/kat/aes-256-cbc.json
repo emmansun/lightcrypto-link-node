@@ -1,0 +1,82 @@
+[
+  {
+    "id": "enc-aes256cbc-001",
+    "algorithm": "AES_256_CBC",
+    "algorithmId": 2,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f4342432d30",
+      "namespace": "default.default.User#field0",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    "expected": {
+      "wireFormatHex": "0102001b64656661756c742e64656661756c742e55736572236669656c64300000000110000102030405060708090a0b0c0d0e0f00006445e36be30e4318c096bbd4359d6768fb2c40afd26819acd49643f1a5b85ff9",
+      "ciphertextHex": "6445e36be30e4318c096bbd4359d6768fb2c40afd26819acd49643f1a5b85ff9"
+    }
+  },
+  {
+    "id": "enc-aes256cbc-002",
+    "algorithm": "AES_256_CBC",
+    "algorithmId": 2,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f4342432d31",
+      "namespace": "default.default.User#field1",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    "expected": {
+      "wireFormatHex": "0102001b64656661756c742e64656661756c742e55736572236669656c64310000000110000102030405060708090a0b0c0d0e0f00006445e36be30e4318c096bbd4359d6768da4c5274ef24342067e479d56d5c079a",
+      "ciphertextHex": "6445e36be30e4318c096bbd4359d6768da4c5274ef24342067e479d56d5c079a"
+    }
+  },
+  {
+    "id": "enc-aes256cbc-003",
+    "algorithm": "AES_256_CBC",
+    "algorithmId": 2,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f4342432d32",
+      "namespace": "default.default.User#field2",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    "expected": {
+      "wireFormatHex": "0102001b64656661756c742e64656661756c742e55736572236669656c64320000000110000102030405060708090a0b0c0d0e0f00006445e36be30e4318c096bbd4359d6768728da7e0158e701312fd804fccc01742",
+      "ciphertextHex": "6445e36be30e4318c096bbd4359d6768728da7e0158e701312fd804fccc01742"
+    }
+  },
+  {
+    "id": "enc-aes256cbc-004",
+    "algorithm": "AES_256_CBC",
+    "algorithmId": 2,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f4342432d33",
+      "namespace": "default.default.User#field3",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    "expected": {
+      "wireFormatHex": "0102001b64656661756c742e64656661756c742e55736572236669656c64330000000110000102030405060708090a0b0c0d0e0f00006445e36be30e4318c096bbd4359d676882ba051f7e47270109ed77d482f31ce7",
+      "ciphertextHex": "6445e36be30e4318c096bbd4359d676882ba051f7e47270109ed77d482f31ce7"
+    }
+  },
+  {
+    "id": "enc-aes256cbc-005",
+    "algorithm": "AES_256_CBC",
+    "algorithmId": 2,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f4342432d34",
+      "namespace": "default.default.User#field4",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b0c0d0e0f"
+    },
+    "expected": {
+      "wireFormatHex": "0102001b64656661756c742e64656661756c742e55736572236669656c64340000000110000102030405060708090a0b0c0d0e0f00006445e36be30e4318c096bbd4359d67684d642166f7ad1b39c7b61e1f3a5d6b7c",
+      "ciphertextHex": "6445e36be30e4318c096bbd4359d67684d642166f7ad1b39c7b61e1f3a5d6b7c"
+    }
+  }
+]

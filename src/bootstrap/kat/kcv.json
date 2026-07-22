@@ -1,0 +1,43 @@
+[
+  {
+    "id": "kcv-aes256gcm-dek",
+    "type": "DEK_KCV",
+    "algorithm": "AES_256_GCM",
+    "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "expectedKcvHex": "0ebcb5deb52c83bd08a8a935182c91993862642986c953e87b3ce99b0decdf34"
+  },
+  {
+    "id": "kcv-aes256cbc-dek",
+    "type": "DEK_KCV",
+    "algorithm": "AES_256_CBC",
+    "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "expectedKcvHex": "f29000b62a499fd0a9f39a6add2e778053c8742d0ea29b2712f6c7af4048f4b4"
+  },
+  {
+    "id": "kcv-sm4gcm-dek",
+    "type": "DEK_KCV",
+    "algorithm": "SM4_GCM",
+    "keyHex": "000102030405060708090a0b0c0d0e0f",
+    "expectedKcvHex": "225d8dcfe2205a5caee6bbab0bd4326595b78ff3afa8a5bc40e0bff3b1e7b775"
+  },
+  {
+    "id": "kcv-sm4cbc-dek",
+    "type": "DEK_KCV",
+    "algorithm": "SM4_CBC",
+    "keyHex": "000102030405060708090a0b0c0d0e0f",
+    "expectedKcvHex": "1e9634b770f9aebaa9344f5aff9f82a344fe9a93cdf56cff4c1dbbe822a0cf22"
+  },
+  {
+    "id": "kcv-hmac",
+    "type": "HMAC_KCV",
+    "keyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "expectedKcvHex": "934ed7450cb8370cd6cc01a933dfa2dfeba8758f994c04767308dc6650d428c9"
+  },
+  {
+    "id": "kcv-binding",
+    "type": "BINDING",
+    "hmacKeyHex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "dekHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "expectedBindingHex": "a27b86e7a70a029cba778d6f738d952696d6d8361b95103dd84ae9df6af063af"
+  }
+]

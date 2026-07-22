@@ -10,6 +10,9 @@ const WireFormatDecoder = require('../format/WireFormatDecoder');
 const MongooseStorageAdapter = require('../adapter/MongooseStorageAdapter');
 const BsonStructuredValueCodec = require('../adapter/BsonStructuredValueCodec');
 const MongooseQueryTransformer = require('../adapter/MongooseQueryTransformer');
+const BootstrapEngine = require('../bootstrap/BootstrapEngine');
+const BootstrapContext = require('../bootstrap/BootstrapContext');
+const { createDefaultPhases } = require('../bootstrap');
 
 /**
  * Check if a value is a mongoose Schema instance.
@@ -353,6 +356,46 @@ function prepareEncryptedSchema(definition) {
  * @param {string} [options.algorithm='AES_256_GCM'] - Default encryption algorithm
  */
 function lclCryptoPlugin(schema, options) {
+  // Bootstrap self-check before schema registration
+  if (options.bootstrap) {
+    const bootstrapOpts = typeof options.bootstrap === 'object' ? options.bootstrap : {};
+    const cmkProvider = options.cmkProvider;
+    if (!cmkProvider) {
+      throw new Error('lclCryptoPlugin: bootstrap requires cmkProvider option');
+    }
+
+    const phases = bootstrapOpts.phases || createDefaultPhases();
+    const context = new BootstrapContext({
+      cmkProvider,
+      vaultStore: options.vaultStore || null,
+      strictMode: bootstrapOpts.strictMode !== undefined ? bootstrapOpts.strictMode : true,
+      bootstrapTimeoutMs: bootstrapOpts.timeoutMs || 15000,
+      onEvent: bootstrapOpts.onEvent || (() => {})
+    });
+
+    const engine = new BootstrapEngine();
+    // Run synchronously during plugin registration — block on failure
+    const resultPromise = engine.run(context, phases);
+    // Store promise on schema for callers who want to await
+    schema._lclBootstrapPromise = resultPromise;
+    // Use a synchronous-ish approach: store for later check
+    // Actually, Mongoose plugins can't be async, so we store and let user handle
+    // But spec says "throw Error preventing initialization" — we use a different approach:
+    // run in pre-hook so it blocks properly
+    schema.pre('save', async function bootstrapCheck() {
+      if (schema._lclBootstrapPromise) {
+        const result = await schema._lclBootstrapPromise;
+        delete schema._lclBootstrapPromise;
+        schema._lclBootstrapResult = result;
+        if (result.status === 'FAILED') {
+          throw new Error(
+            `Bootstrap failed at phase '${result.failedPhase}': ${result.errorDetails}`
+          );
+        }
+      }
+    });
+  }
+
   // Resolve keyVaultService from options:
   // 1. If keyVaultService is provided directly, use it
   // 2. If vaultStore is provided, construct KeyVaultService

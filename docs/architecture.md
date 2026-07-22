@@ -206,3 +206,40 @@ This two-step process (HKDF derivation + HMAC) ensures that blind indexes are is
 - In-memory cache with configurable TTL (default: 1 hour)
 - Cache key is entity name
 - `flushCache()` securely destroys cached keys using `crypto.randomFillSync()`
+
+## Bootstrap Engine (src/bootstrap/)
+
+The Bootstrap Engine provides fail-fast self-checks at application startup, aligned with the Java `lcl-core/bootstrap/` implementation.
+
+### Module Structure
+
+| Module | Purpose |
+|--------|--------|
+| `BootstrapEngine` | Sequential phase executor with failure classification, timeout, and retry |
+| `BootstrapContext` | Immutable context (cmkProvider, vaultStore, strictMode, timeout) |
+| `BootstrapResult` / `PhaseResult` | Structured result model (READY/FAILED/DEGRADED) |
+| `BootstrapTimeoutError` | Timeout error with phase name |
+| `KatRunner` | KAT vector verification (encryption, blind index, KCV) |
+| `KatVectorLoader` | Loads golden vectors from `src/bootstrap/kat/` |
+| `ConfigValidationCheck` | Validates cmkProvider configuration |
+| `KmsReachabilityCheck` | Probes KMS via getPublicReference() |
+| `VaultReachabilityCheck` | Probes VaultStore via exists() |
+
+### Execution Flow
+
+```
+BootstrapEngine.run(context, phases)
+  ├─ BOOT-1 Config Validation (FATAL)
+  ├─ BOOT-2 KMS Reachability (RECOVERABLE, 3 retries)
+  ├─ BOOT-3 Vault Reachability (RECOVERABLE, 3 retries)
+  └─ BOOT-4 KAT Verification (FATAL)
+      ├─ AES-256-GCM encryption KAT
+      ├─ AES-256-CBC encryption KAT
+      ├─ SM4-CBC encryption KAT
+      ├─ Blind index HMAC-SHA256 KAT
+      └─ KCV + binding KAT
+```
+
+### Integration
+
+The engine is integrated into `lclCryptoPlugin` via the `bootstrap` option. When enabled, bootstrap runs before schema registration. A `FAILED` result throws an Error, preventing initialization with corrupted crypto primitives.
