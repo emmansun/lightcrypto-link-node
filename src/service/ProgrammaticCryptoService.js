@@ -1,7 +1,6 @@
 'use strict';
 
 const CryptoCodec = require('../crypto/CryptoCodec');
-const BsonCodec = require('../crypto/BsonCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 const { FieldCryptoService, DecryptionError } = require('./FieldCryptoService');
@@ -22,19 +21,24 @@ class ProgrammaticCryptoService {
   /**
    * @param {Object} options
    * @param {KeyVaultService} options.keyVaultService  - Required. Manages per-namespace DEK lifecycle.
+   * @param {import('../spi/StructuredValueCodec')} options.structuredValueCodec - Required. Codec for structured value encoding/decoding.
    * @param {FieldCryptoService} [options.fieldCryptoService] - Optional. Created internally if omitted.
+   * @param {import('../spi/StorageAdapter')} [options.storageAdapter] - Required when fieldCryptoService is not provided.
    * @param {string} [options.algorithm='AES_256_GCM'] - Default encryption algorithm.
    */
-  constructor({ keyVaultService, fieldCryptoService, algorithm } = {}) {
+  constructor({ keyVaultService, structuredValueCodec, fieldCryptoService, storageAdapter, algorithm } = {}) {
     if (!keyVaultService) {
       throw new Error('keyVaultService is required');
     }
+    if (!structuredValueCodec) {
+      throw new Error('structuredValueCodec is required');
+    }
 
     this._keyVaultService = keyVaultService;
-    this._fieldCryptoService = fieldCryptoService || new FieldCryptoService();
+    this._fieldCryptoService = fieldCryptoService || new FieldCryptoService({ storageAdapter, structuredValueCodec });
     this._algorithm = algorithm || DEFAULT_ALGORITHM;
     this._codec = new CryptoCodec();
-    this._bsonCodec = new BsonCodec();
+    this._structuredCodec = structuredValueCodec;
     this._serializer = new TypeSerializer();
     this._deserializer = new TypeDeserializer();
   }
@@ -72,7 +76,7 @@ class ProgrammaticCryptoService {
 
     // Structured type detection: plain objects and arrays use BSON binary serialization
     if (Array.isArray(value)) {
-      const plaintext = this._bsonCodec.encodeCollection(value);
+      const plaintext = this._structuredCodec.encode(value, 'COL');
       const ciphertext = this._codec.encrypt(dek, plaintext, algo, ns, dekVersion);
       return {
         _e: 1,
@@ -88,7 +92,7 @@ class ProgrammaticCryptoService {
       !(value instanceof Date) &&
       value.constructor === Object
     ) {
-      const plaintext = this._bsonCodec.encodeDocument(value);
+      const plaintext = this._structuredCodec.encode(value, 'DOC');
       const ciphertext = this._codec.encrypt(dek, plaintext, algo, ns, dekVersion);
       return {
         _e: 1,

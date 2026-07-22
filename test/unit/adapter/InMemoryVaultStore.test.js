@@ -1,7 +1,7 @@
 'use strict';
 
 const InMemoryVaultStore = require('../../../src/adapter/InMemoryVaultStore');
-const OptimisticLockError = require('../../../src/adapter/OptimisticLockError');
+const OptimisticLockError = require('../../../src/spi/OptimisticLockError');
 
 describe('InMemoryVaultStore (unit)', () => {
   let store;

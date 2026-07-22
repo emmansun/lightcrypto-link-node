@@ -1,7 +1,7 @@
 'use strict';
 
-const VaultStore = require('./VaultStore');
-const OptimisticLockError = require('./OptimisticLockError');
+const VaultStore = require('../spi/VaultStore');
+const OptimisticLockError = require('../spi/OptimisticLockError');
 
 const DEFAULT_COLLECTION = '__lcl_keyvault';
 const VAULT_ID_PREFIX = 'lcl-dek-';

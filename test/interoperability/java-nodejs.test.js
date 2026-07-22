@@ -4,7 +4,8 @@ const crypto = require('crypto');
 const { serialize, deserialize } = require('bson');
 const { FieldCryptoService } = require('../../src/service/FieldCryptoService');
 const CryptoCodec = require('../../src/crypto/CryptoCodec');
-const BsonCodec = require('../../src/crypto/BsonCodec');
+const BsonStructuredValueCodec = require('../../src/adapter/BsonStructuredValueCodec');
+const MongooseStorageAdapter = require('../../src/adapter/MongooseStorageAdapter');
 const TypeSerializer = require('../../src/service/TypeSerializer');
 const Namespace = require('../../src/namespace/Namespace');
 
@@ -28,7 +29,10 @@ describe('Java Interoperability', () => {
   let serializer;
 
   beforeEach(() => {
-    fieldService = new FieldCryptoService();
+    fieldService = new FieldCryptoService({
+      storageAdapter: new MongooseStorageAdapter(),
+      structuredValueCodec: new BsonStructuredValueCodec()
+    });
     codec = new CryptoCodec();
     serializer = new TypeSerializer();
   });
@@ -195,12 +199,12 @@ describe('Java Interoperability', () => {
     const algo = 'AES_256_GCM';
 
     beforeEach(() => {
-      bsonCodec = new BsonCodec();
+      bsonCodec = new BsonStructuredValueCodec();
     });
 
-    test('DOC: Node.js BsonCodec output is valid BSON parseable by Java DocumentCodec', () => {
+    test('DOC: Node.js BsonStructuredValueCodec output is valid BSON parseable by Java DocumentCodec', () => {
       const obj = { city: 'Shanghai', zip: '200000' };
-      const bsonBuf = bsonCodec.encodeDocument(obj);
+      const bsonBuf = bsonCodec.encode(obj, 'DOC');
 
       // Verify the BSON binary can be deserialized back (same as Java's DocumentCodec.decode)
       const decoded = deserialize(bsonBuf);
@@ -220,9 +224,9 @@ describe('Java Interoperability', () => {
       expect(decrypted).toEqual(obj);
     });
 
-    test('COL: Node.js BsonCodec output for array is valid BSON with _v wrapper', () => {
+    test('COL: Node.js BsonStructuredValueCodec output for array is valid BSON with _v wrapper', () => {
       const arr = ['alpha', 'beta', 'gamma'];
-      const bsonBuf = bsonCodec.encodeCollection(arr);
+      const bsonBuf = bsonCodec.encode(arr, 'COL');
 
       // Verify BSON contains _v array (same as Java's { _v: [...] } wrapper)
       const decoded = deserialize(bsonBuf);
@@ -253,10 +257,10 @@ describe('Java Interoperability', () => {
       expect(decrypted).toEqual(map);
     });
 
-    test('BsonCodec byte output matches Java BSON spec for simple document', () => {
+    test('BsonStructuredValueCodec byte output matches Java BSON spec for simple document', () => {
       // Java's `new Document("name", "Alice").append("age", 30)` produces the same BSON bytes
       const obj = { name: 'Alice', age: 30 };
-      const nodeBson = bsonCodec.encodeDocument(obj);
+      const nodeBson = bsonCodec.encode(obj, 'DOC');
 
       // Verify it starts with BSON size (int32 LE) and ends with 0x00 terminator
       const size = nodeBson.readInt32LE(0);

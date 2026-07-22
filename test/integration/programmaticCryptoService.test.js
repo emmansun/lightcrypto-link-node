@@ -7,6 +7,8 @@ const {
   LocalCmkProvider,
   MongoVaultStore,
   ProgrammaticCryptoService,
+  BsonStructuredValueCodec,
+  MongooseStorageAdapter,
   lclCryptoPlugin,
   prepareEncryptedSchema
 } = require('../../src');
@@ -42,6 +44,8 @@ describe('Integration: ProgrammaticCryptoService', () => {
 
     programmaticService = new ProgrammaticCryptoService({
       keyVaultService,
+      storageAdapter: new MongooseStorageAdapter(),
+      structuredValueCodec: new BsonStructuredValueCodec(),
       algorithm: 'AES_256_GCM'
     });
   });
@@ -297,9 +301,9 @@ describe('Integration: ProgrammaticCryptoService', () => {
 
     test('decryptValue restores MAP sub-document to plain object', async () => {
       // Construct a MAP sub-document manually (same BSON encoding as DOC)
-      const BsonCodec = require('../../src/crypto/BsonCodec');
+      const BsonStructuredValueCodec = require('../../src/adapter/BsonStructuredValueCodec');
       const CryptoCodec = require('../../src/crypto/CryptoCodec');
-      const bsonCodec = new BsonCodec();
+      const bsonCodec = new BsonStructuredValueCodec();
       const cryptoCodec = new CryptoCodec();
 
       const canonicalNs = 'default.default.User#metadata';
@@ -309,7 +313,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
       const dek = await keyVaultService.getDek(activeKid);
 
       const mapValue = { key1: 'value1', key2: 'value2' };
-      const bsonBytes = bsonCodec.encodeDocument(mapValue);
+      const bsonBytes = bsonCodec.encode(mapValue, 'DOC');
       const ns = Namespace.parse(NS_USER_METADATA);
       const ciphertext = cryptoCodec.encrypt(dek, bsonBytes, 'AES_256_GCM', ns, dekVersion);
 
@@ -324,9 +328,9 @@ describe('Integration: ProgrammaticCryptoService', () => {
     });
 
     test('decryptDocument with MAP field', async () => {
-      const BsonCodec = require('../../src/crypto/BsonCodec');
+      const BsonStructuredValueCodec = require('../../src/adapter/BsonStructuredValueCodec');
       const CryptoCodec = require('../../src/crypto/CryptoCodec');
-      const bsonCodec = new BsonCodec();
+      const bsonCodec = new BsonStructuredValueCodec();
       const cryptoCodec = new CryptoCodec();
 
       const canonicalNs = 'default.default.User#metadata';
@@ -336,7 +340,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
       const dek = await keyVaultService.getDek(activeKid);
 
       const mapValue = { lang: 'en', theme: 'dark' };
-      const bsonBytes = bsonCodec.encodeDocument(mapValue);
+      const bsonBytes = bsonCodec.encode(mapValue, 'DOC');
       const ns = Namespace.parse(NS_USER_METADATA);
       const ciphertext = cryptoCodec.encrypt(dek, bsonBytes, 'AES_256_GCM', ns, dekVersion);
 

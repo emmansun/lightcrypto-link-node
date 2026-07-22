@@ -9,11 +9,6 @@ describe('index.js - public API exports', () => {
       expect(typeof lib.CryptoCodec).toBe('function');
     });
 
-    test('exports BsonCodec', () => {
-      expect(lib.BsonCodec).toBeDefined();
-      expect(typeof lib.BsonCodec).toBe('function');
-    });
-
     test('exports SymmetricEncryptor', () => {
       expect(lib.SymmetricEncryptor).toBeDefined();
       expect(typeof lib.SymmetricEncryptor).toBe('function');
@@ -162,6 +157,28 @@ describe('index.js - public API exports', () => {
     });
   });
 
+  describe('SPI module', () => {
+    test('exports StorageAdapter', () => {
+      expect(lib.StorageAdapter).toBeDefined();
+      expect(typeof lib.StorageAdapter).toBe('function');
+    });
+
+    test('exports DocumentAccessor', () => {
+      expect(lib.DocumentAccessor).toBeDefined();
+      expect(typeof lib.DocumentAccessor).toBe('function');
+    });
+
+    test('exports StructuredValueCodec', () => {
+      expect(lib.StructuredValueCodec).toBeDefined();
+      expect(typeof lib.StructuredValueCodec).toBe('function');
+    });
+
+    test('exports QueryTransformer', () => {
+      expect(lib.QueryTransformer).toBeDefined();
+      expect(typeof lib.QueryTransformer).toBe('function');
+    });
+  });
+
   describe('Adapter module', () => {
     test('exports VaultStore', () => {
       expect(lib.VaultStore).toBeDefined();
@@ -192,6 +209,26 @@ describe('index.js - public API exports', () => {
       expect(lib.InMemoryVaultStore).toBeDefined();
       expect(typeof lib.InMemoryVaultStore).toBe('function');
     });
+
+    test('exports MongooseStorageAdapter', () => {
+      expect(lib.MongooseStorageAdapter).toBeDefined();
+      expect(typeof lib.MongooseStorageAdapter).toBe('function');
+    });
+
+    test('exports MongooseDocumentAccessor', () => {
+      expect(lib.MongooseDocumentAccessor).toBeDefined();
+      expect(typeof lib.MongooseDocumentAccessor).toBe('function');
+    });
+
+    test('exports BsonStructuredValueCodec', () => {
+      expect(lib.BsonStructuredValueCodec).toBeDefined();
+      expect(typeof lib.BsonStructuredValueCodec).toBe('function');
+    });
+
+    test('exports MongooseQueryTransformer', () => {
+      expect(lib.MongooseQueryTransformer).toBeDefined();
+      expect(typeof lib.MongooseQueryTransformer).toBe('function');
+    });
   });
 
   describe('instantiation smoke tests', () => {
@@ -211,7 +248,10 @@ describe('index.js - public API exports', () => {
     });
 
     test('FieldCryptoService can be instantiated', () => {
-      const service = new lib.FieldCryptoService();
+      const service = new lib.FieldCryptoService({
+        storageAdapter: new lib.MongooseStorageAdapter(),
+        structuredValueCodec: new lib.BsonStructuredValueCodec()
+      });
       expect(service).toBeInstanceOf(lib.FieldCryptoService);
     });
 
@@ -225,6 +265,21 @@ describe('index.js - public API exports', () => {
       const cmkHex = crypto.randomBytes(32).toString('hex');
       const provider = new lib.LocalCmkProvider(cmkHex);
       expect(provider).toBeInstanceOf(lib.CmkProvider);
+    });
+
+    test('MongooseStorageAdapter can be instantiated', () => {
+      const adapter = new lib.MongooseStorageAdapter();
+      expect(adapter).toBeInstanceOf(lib.StorageAdapter);
+    });
+
+    test('MongooseDocumentAccessor can be instantiated', () => {
+      const accessor = new lib.MongooseDocumentAccessor();
+      expect(accessor).toBeInstanceOf(lib.DocumentAccessor);
+    });
+
+    test('BsonStructuredValueCodec can be instantiated', () => {
+      const codec = new lib.BsonStructuredValueCodec();
+      expect(codec).toBeInstanceOf(lib.StructuredValueCodec);
     });
   });
 });

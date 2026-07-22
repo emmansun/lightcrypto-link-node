@@ -142,6 +142,27 @@ The `mode` option controls how structured fields (sub-documents and arrays) are 
 | `ELEMENT` | Error | Element-level | Error |
 | `WHOLE` | Whole-object | Whole-array (COL) | Whole-array (COL) |
 
+## SPI Adapter Options
+
+The plugin accepts SPI override options for customizing data storage behavior:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `storageAdapter` | `StorageAdapter` | `MongooseStorageAdapter` | Encrypted payload format (build/extract) |
+| `structuredValueCodec` | `StructuredValueCodec` | `BsonStructuredValueCodec` | Structured value serialization (DOC/COL/MAP) |
+
+```javascript
+// Use custom SPI implementations
+schema.plugin(lclCryptoPlugin, {
+  keyVaultService,
+  cmkProvider,
+  storageAdapter: new MyCustomStorageAdapter(),
+  structuredValueCodec: new MyCustomCodec()
+});
+```
+
+The default `MongooseStorageAdapter` produces `{ c, _e: 1, _t, b? }` sub-documents compatible with Java LightCrypto-Link. Override only when you need a different payload format or non-Mongoose storage backend.
+
 ### Usage
 
 ```javascript

@@ -1,7 +1,6 @@
 'use strict';
 
 const CryptoCodec = require('../crypto/CryptoCodec');
-const BsonCodec = require('../crypto/BsonCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 const Namespace = require('../namespace/Namespace');
@@ -30,9 +29,17 @@ class DecryptionError extends Error {
  * Sub-document format: { _e: 1, _k: kid, _a: algorithm, _t: typeMarker, c: Base64URL string, b?: blindIndex }
  */
 class FieldCryptoService {
-  constructor() {
+  /**
+   * @param {Object} options - Options
+   * @param {import('../spi/StorageAdapter')} options.storageAdapter - StorageAdapter implementation (required)
+   * @param {import('../spi/StructuredValueCodec')} options.structuredValueCodec - StructuredValueCodec implementation (required)
+   */
+  constructor({ storageAdapter, structuredValueCodec } = {}) {
+    if (!storageAdapter) throw new Error('storageAdapter is required');
+    if (!structuredValueCodec) throw new Error('structuredValueCodec is required');
     this._codec = new CryptoCodec();
-    this._bsonCodec = new BsonCodec();
+    this._storageAdapter = storageAdapter;
+    this._structuredCodec = structuredValueCodec;
     this._serializer = new TypeSerializer();
     this._deserializer = new TypeDeserializer();
   }
@@ -69,27 +76,21 @@ class FieldCryptoService {
     // Structured type path: DOC / COL / MAP
     if (structuredType === 'DOC' || structuredType === 'MAP') {
       const plainObj = (value && typeof value.toObject === 'function') ? value.toObject() : value;
-      const plaintext = this._bsonCodec.encodeDocument(plainObj);
+      const plaintext = this._structuredCodec.encode(plainObj, structuredType);
       const ciphertext = this._codec.encrypt(dek, plaintext, algorithm, namespace, dekVersion);
-      return {
-        _e: 1,
-        _k: activeKid,
-        _a: algorithm,
-        _t: structuredType,
-        c: ciphertext
-      };
+      const payload = this._storageAdapter.buildEncryptedPayload(ciphertext, structuredType, null);
+      payload._k = activeKid;
+      payload._a = algorithm;
+      return payload;
     }
 
     if (structuredType === 'COL') {
-      const plaintext = this._bsonCodec.encodeCollection(value);
+      const plaintext = this._structuredCodec.encode(value, 'COL');
       const ciphertext = this._codec.encrypt(dek, plaintext, algorithm, namespace, dekVersion);
-      return {
-        _e: 1,
-        _k: activeKid,
-        _a: algorithm,
-        _t: 'COL',
-        c: ciphertext
-      };
+      const payload = this._storageAdapter.buildEncryptedPayload(ciphertext, 'COL', null);
+      payload._k = activeKid;
+      payload._a = algorithm;
+      return payload;
     }
 
     // Scalar path
@@ -107,22 +108,19 @@ class FieldCryptoService {
     // Encrypt — produces Base64URL string
     const ciphertext = this._codec.encrypt(dek, plaintext, algorithm, namespace, dekVersion);
 
-    // Build sub-document (c is now a string, not Buffer)
-    const subDoc = {
-      _e: 1,
-      _k: activeKid,
-      _a: algorithm,
-      _t: typeMarker,
-      c: ciphertext
-    };
-
     // Compute blind index if enabled
+    let blindIndexValue = null;
     if (blindIndex) {
       if (typeMarker === 'BYTES' && Buffer.isBuffer(value)) {
         serializedString = value.toString('base64');
       }
-      subDoc.b = this._codec.generateBlindIndex(hmacKey, namespace, effectiveFieldName, serializedString);
+      blindIndexValue = this._codec.generateBlindIndex(hmacKey, namespace, effectiveFieldName, serializedString);
     }
+
+    // Build sub-document via StorageAdapter
+    const subDoc = this._storageAdapter.buildEncryptedPayload(ciphertext, typeMarker, blindIndexValue);
+    subDoc._k = activeKid;
+    subDoc._a = algorithm;
 
     return subDoc;
   }
@@ -140,8 +138,8 @@ class FieldCryptoService {
       return subDocument;
     }
 
-    // Validate _e marker
-    if (subDocument._e !== 1) {
+    // Use StorageAdapter for detection
+    if (!this._storageAdapter.isEncryptedPayload(subDocument)) {
       if (subDocument._e === undefined) {
         return subDocument; // Not an encrypted sub-document
       }
@@ -154,8 +152,8 @@ class FieldCryptoService {
       throw new DecryptionError('Unsupported algorithm: no algorithm specified in sub-document');
     }
 
-    // Get ciphertext — now expected as Base64URL string (Wire Format V1) or legacy Buffer
-    const ciphertext = subDocument.c;
+    // Extract blob via StorageAdapter
+    const ciphertext = this._storageAdapter.extractBlob(subDocument);
     if (!ciphertext) {
       throw new DecryptionError('Missing ciphertext field in encrypted sub-document');
     }
@@ -179,16 +177,16 @@ class FieldCryptoService {
       throw new DecryptionError(`Decryption failed: ${e.message}`);
     }
 
-    // Get type marker
-    const typeMarker = subDocument._t || 'STR';
+    // Get type marker via StorageAdapter
+    const typeMarker = this._storageAdapter.extractTypeMarker(subDocument) || 'STR';
 
     // Structured type path: DOC / COL / MAP
     if (typeMarker === 'DOC' || typeMarker === 'MAP') {
-      return this._bsonCodec.decodeDocument(plaintext);
+      return this._structuredCodec.decode(plaintext, typeMarker);
     }
 
     if (typeMarker === 'COL') {
-      return this._bsonCodec.decodeCollection(plaintext);
+      return this._structuredCodec.decode(plaintext, 'COL');
     }
 
     // Scalar path

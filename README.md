@@ -39,6 +39,7 @@ Deep docs are in [docs](docs/):
 - Encryption mode control: `AUTO` (default), `ELEMENT`, `WHOLE`
 - Per-entity DEK versioning and rotation
 - Pluggable CMK providers: Local, Azure Key Vault, Alibaba Cloud KMS
+- Pluggable data storage adapters: SPI layer (`StorageAdapter`, `DocumentAccessor`, `StructuredValueCodec`, `QueryTransformer`) with Mongoose/BSON defaults
 - Zero third-party crypto dependencies (native Node.js `crypto`)
 - **Wire Format V1** cross-language binary compatibility with Java LightCrypto-Link (verified by golden vector test suite)
 - BSON format compatible with Java LightCrypto-Link (DOC, COL, MAP type markers)

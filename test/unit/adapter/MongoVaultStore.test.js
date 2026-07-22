@@ -1,7 +1,7 @@
 'use strict';
 
 const MongoVaultStore = require('../../../src/adapter/MongoVaultStore');
-const OptimisticLockError = require('../../../src/adapter/OptimisticLockError');
+const OptimisticLockError = require('../../../src/spi/OptimisticLockError');
 
 const VAULT_ID_PREFIX = 'lcl-dek-';
 const NS_PHONE = 'default.default.User#phone';

@@ -1,7 +1,6 @@
 'use strict';
 
 const CryptoCodec = require('./crypto/CryptoCodec');
-const BsonCodec = require('./crypto/BsonCodec');
 const SymmetricEncryptor = require('./crypto/SymmetricEncryptor');
 const AesGcmEncryptor = require('./crypto/AesGcmEncryptor');
 const AesCbcEncryptor = require('./crypto/AesCbcEncryptor');
@@ -33,17 +32,26 @@ const LclConfig = require('./config/LclConfig');
 const { lclCryptoPlugin, prepareEncryptedSchema } = require('./plugin/lclCryptoPlugin');
 const { rewriteQuery } = require('./plugin/queryRewriter');
 
+// SPI layer
+const StorageAdapter = require('./spi/StorageAdapter');
+const DocumentAccessor = require('./spi/DocumentAccessor');
+const StructuredValueCodec = require('./spi/StructuredValueCodec');
+const QueryTransformer = require('./spi/QueryTransformer');
+const VaultStore = require('./spi/VaultStore');
+const { validateVaultDocument, createVaultDocument } = require('./spi/VaultDocument');
+const OptimisticLockError = require('./spi/OptimisticLockError');
+
 // Adapter layer
-const VaultStore = require('./adapter/VaultStore');
-const { validateVaultDocument, createVaultDocument } = require('./adapter/VaultDocument');
-const OptimisticLockError = require('./adapter/OptimisticLockError');
 const MongoVaultStore = require('./adapter/MongoVaultStore');
 const InMemoryVaultStore = require('./adapter/InMemoryVaultStore');
+const MongooseStorageAdapter = require('./adapter/MongooseStorageAdapter');
+const MongooseDocumentAccessor = require('./adapter/MongooseDocumentAccessor');
+const BsonStructuredValueCodec = require('./adapter/BsonStructuredValueCodec');
+const MongooseQueryTransformer = require('./adapter/MongooseQueryTransformer');
 
 module.exports = {
   // Crypto
   CryptoCodec,
-  BsonCodec,
   SymmetricEncryptor,
   AesGcmEncryptor,
   AesCbcEncryptor,
@@ -85,11 +93,23 @@ module.exports = {
   prepareEncryptedSchema,
   rewriteQuery,
 
-  // Adapter
+  // SPI
+  StorageAdapter,
+  DocumentAccessor,
+  StructuredValueCodec,
+  QueryTransformer,
+
+  // Vault
   VaultStore,
   validateVaultDocument,
   createVaultDocument,
   OptimisticLockError,
   MongoVaultStore,
-  InMemoryVaultStore
+  InMemoryVaultStore,
+
+  // Adapter
+  MongooseStorageAdapter,
+  MongooseDocumentAccessor,
+  BsonStructuredValueCodec,
+  MongooseQueryTransformer
 };

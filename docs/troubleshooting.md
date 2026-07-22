@@ -29,6 +29,27 @@
 - **Regex queries**: Not supported on encrypted fields (pattern matching)
 - **Java Long precision**: Use `mongoose-long` for Long fields exceeding JavaScript safe integer range
 
+## SPI Adapter Configuration
+
+### Common Issues
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Not implemented` | Using base SPI class without a concrete implementation | Use `MongooseStorageAdapter` or provide a custom implementation extending `StorageAdapter` |
+| Payload format mismatch | Custom `StorageAdapter` produces incompatible format | Ensure custom adapter's `buildEncryptedPayload` returns objects with `_e: 1` marker |
+| BSON serialization mismatch | Custom `StructuredValueCodec` output differs from BSON | Ensure COL encoding wraps as `{ _v: value }` for Java interoperability |
+| Blind index query not rewritten | Field missing `blindIndex: true` in schema | Add `blindIndex: true` to the encrypted field definition |
+
+### Custom Adapter Checklist
+
+When implementing a custom SPI adapter:
+
+1. Extend the abstract base class (e.g., `StorageAdapter`)
+2. Implement all methods — unimplemented methods throw `Not implemented`
+3. For `StorageAdapter`: `isEncryptedPayload` must detect `_e === 1` for Mongoose compatibility
+4. For `StructuredValueCodec`: `encode`/`decode` must round-trip correctly
+5. Pass custom adapters via plugin options: `{ storageAdapter, structuredValueCodec }`
+
 ## Supported Schema Patterns for Structured Encryption
 
 ### Sub-document (DOC) Encryption

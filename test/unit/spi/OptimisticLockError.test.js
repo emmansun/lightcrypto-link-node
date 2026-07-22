@@ -1,6 +1,6 @@
 'use strict';
 
-const OptimisticLockError = require('../../../src/adapter/OptimisticLockError');
+const OptimisticLockError = require('../../../src/spi/OptimisticLockError');
 
 describe('OptimisticLockError (unit)', () => {
   test('is an instance of Error', () => {

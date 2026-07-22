@@ -5,14 +5,17 @@
  */
 
 const mongoose = require('mongoose');
-const { KeyVaultService, LocalCmkProvider, FieldCryptoService, MongoVaultStore } = require('../src');
+const { KeyVaultService, LocalCmkProvider, FieldCryptoService, MongoVaultStore, MongooseStorageAdapter, BsonStructuredValueCodec } = require('../src');
 const Namespace = require('../src/namespace/Namespace');
 
 async function main() {
   // Setup
   const cmkHex = 'a'.repeat(64); // Demo CMK (use real CMK in production)
   const cmkProvider = new LocalCmkProvider(cmkHex);
-  const fieldService = new FieldCryptoService();
+  const fieldService = new FieldCryptoService({
+    storageAdapter: new MongooseStorageAdapter(),
+    structuredValueCodec: new BsonStructuredValueCodec()
+  });
 
   await mongoose.connect(process.env.LCL_MONGODB_URI || 'mongodb://localhost:27017/lightcrypto-rotation-demo');
 

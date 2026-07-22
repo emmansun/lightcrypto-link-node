@@ -2,6 +2,8 @@
 
 const crypto = require('crypto');
 const { FieldCryptoService, FatalCryptoError, DecryptionError } = require('../../../src/service/FieldCryptoService');
+const MongooseStorageAdapter = require('../../../src/adapter/MongooseStorageAdapter');
+const BsonStructuredValueCodec = require('../../../src/adapter/BsonStructuredValueCodec');
 
 describe('FieldCryptoService', () => {
   let service;
@@ -10,7 +12,10 @@ describe('FieldCryptoService', () => {
   let activeKid;
 
   beforeEach(() => {
-    service = new FieldCryptoService();
+    service = new FieldCryptoService({
+      storageAdapter: new MongooseStorageAdapter(),
+      structuredValueCodec: new BsonStructuredValueCodec()
+    });
     dek = crypto.randomBytes(32);
     hmacKey = crypto.randomBytes(32);
     activeKid = 'v1-a3b2c1d4';

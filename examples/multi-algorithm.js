@@ -5,9 +5,12 @@
  */
 
 const crypto = require('crypto');
-const { FieldCryptoService } = require('../src');
+const { FieldCryptoService, MongooseStorageAdapter, BsonStructuredValueCodec } = require('../src');
 
-const fieldService = new FieldCryptoService();
+const fieldService = new FieldCryptoService({
+  storageAdapter: new MongooseStorageAdapter(),
+  structuredValueCodec: new BsonStructuredValueCodec()
+});
 
 // Keys for different algorithms
 const aes256Key = crypto.randomBytes(32); // AES-256 needs 32 bytes

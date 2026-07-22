@@ -3,6 +3,8 @@
 const crypto = require('crypto');
 const ProgrammaticCryptoService = require('../../../src/service/ProgrammaticCryptoService');
 const { DecryptionError } = require('../../../src/service/FieldCryptoService');
+const BsonStructuredValueCodec = require('../../../src/adapter/BsonStructuredValueCodec');
+const MongooseStorageAdapter = require('../../../src/adapter/MongooseStorageAdapter');
 
 const NS_USER_PHONE = 'User#phone';
 const CANONICAL_NS = 'default.default.User#phone';
@@ -11,6 +13,7 @@ describe('ProgrammaticCryptoService', () => {
   let dek;
   let activeKid;
   let mockKeyVaultService;
+  let spiOptions;
 
   beforeEach(() => {
     dek = crypto.randomBytes(32);
@@ -24,12 +27,21 @@ describe('ProgrammaticCryptoService', () => {
       getDekByVersion: jest.fn().mockResolvedValue(dek),
       getActiveHmacKey: jest.fn().mockResolvedValue(crypto.randomBytes(32))
     };
+
+    spiOptions = {
+      storageAdapter: new MongooseStorageAdapter(),
+      structuredValueCodec: new BsonStructuredValueCodec()
+    };
   });
 
   // ─── Constructor ─────────────────────────────────────────────────────────
   describe('constructor', () => {
     test('throws if keyVaultService is not provided', () => {
-      expect(() => new ProgrammaticCryptoService({})).toThrow(/keyVaultService/);
+      expect(() => new ProgrammaticCryptoService(spiOptions)).toThrow(/keyVaultService/);
+    });
+
+    test('throws if structuredValueCodec is not provided', () => {
+      expect(() => new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService })).toThrow(/structuredValueCodec/);
     });
 
     test('throws if no options argument is provided', () => {
@@ -37,13 +49,14 @@ describe('ProgrammaticCryptoService', () => {
     });
 
     test('creates instance with default algorithm AES_256_GCM', () => {
-      const svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
+      const svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService, ...spiOptions });
       expect(svc._algorithm).toBe('AES_256_GCM');
     });
 
     test('creates instance with custom algorithm', () => {
       const svc = new ProgrammaticCryptoService({
         keyVaultService: mockKeyVaultService,
+        ...spiOptions,
         algorithm: 'AES_256_CBC'
       });
       expect(svc._algorithm).toBe('AES_256_CBC');
@@ -53,6 +66,7 @@ describe('ProgrammaticCryptoService', () => {
       const mockFieldCrypto = { encryptField: jest.fn(), decryptField: jest.fn() };
       const svc = new ProgrammaticCryptoService({
         keyVaultService: mockKeyVaultService,
+        structuredValueCodec: new BsonStructuredValueCodec(),
         fieldCryptoService: mockFieldCrypto
       });
       expect(svc._fieldCryptoService).toBe(mockFieldCrypto);
@@ -63,7 +77,7 @@ describe('ProgrammaticCryptoService', () => {
   describe('encryptValue', () => {
     let svc;
     beforeEach(() => {
-      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
+      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService, ...spiOptions });
     });
 
     test('encrypts a string value with correct markers', async () => {
@@ -136,7 +150,7 @@ describe('ProgrammaticCryptoService', () => {
   describe('decryptValue', () => {
     let svc;
     beforeEach(() => {
-      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
+      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService, ...spiOptions });
     });
 
     test('round-trip: encrypt then decrypt returns original string', async () => {
@@ -203,7 +217,7 @@ describe('ProgrammaticCryptoService', () => {
   describe('decryptDocument', () => {
     let svc;
     beforeEach(() => {
-      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
+      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService, ...spiOptions });
     });
 
     test('decrypts multiple encrypted fields in a document', async () => {
@@ -258,7 +272,7 @@ describe('ProgrammaticCryptoService', () => {
   // ─── Error handling ──────────────────────────────────────────────────────
   describe('error handling', () => {
     test('wrong DEK causes decryption failure', async () => {
-      const svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
+      const svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService, ...spiOptions });
       const subDoc = await svc.encryptValue('secret-data', NS_USER_PHONE);
 
       // Create a second service with a different DEK
@@ -267,7 +281,7 @@ describe('ProgrammaticCryptoService', () => {
         ...mockKeyVaultService,
         getDekByVersion: jest.fn().mockResolvedValue(differentDek)
       };
-      const svc2 = new ProgrammaticCryptoService({ keyVaultService: mockKvs2 });
+      const svc2 = new ProgrammaticCryptoService({ keyVaultService: mockKvs2, ...spiOptions });
 
       await expect(svc2.decryptValue(subDoc)).rejects.toThrow();
     });

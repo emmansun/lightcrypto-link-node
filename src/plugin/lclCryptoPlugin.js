@@ -5,9 +5,11 @@ const KeyVaultService = require('../service/KeyVaultService');
 const MongoVaultStore = require('../adapter/MongoVaultStore');
 const CryptoCodec = require('../crypto/CryptoCodec');
 const TypeSerializer = require('../service/TypeSerializer');
-const { rewriteQuery } = require('./queryRewriter');
 const Namespace = require('../namespace/Namespace');
 const WireFormatDecoder = require('../format/WireFormatDecoder');
+const MongooseStorageAdapter = require('../adapter/MongooseStorageAdapter');
+const BsonStructuredValueCodec = require('../adapter/BsonStructuredValueCodec');
+const MongooseQueryTransformer = require('../adapter/MongooseQueryTransformer');
 
 /**
  * Check if a value is a mongoose Schema instance.
@@ -387,9 +389,25 @@ function lclCryptoPlugin(schema, options) {
   }
   const entityName = options.entityName;
   const algorithm = options.algorithm || 'AES_256_GCM';
-  const fieldCryptoService = new FieldCryptoService();
+
+  // SPI implementations — accept overrides or use Mongoose/BSON defaults
+  const storageAdapter = options.storageAdapter || new MongooseStorageAdapter();
+  const structuredValueCodec = options.structuredValueCodec || new BsonStructuredValueCodec();
+
+  const fieldCryptoService = new FieldCryptoService({
+    storageAdapter,
+    structuredValueCodec
+  });
   const codec = new CryptoCodec();
   const serializer = new TypeSerializer();
+
+  // Query transformer for blind-index rewriting
+  const queryTransformer = new MongooseQueryTransformer({
+    codec,
+    keyVaultService,
+    serializer,
+    entityName
+  });
 
   // Collect encrypted fields from schema
   // Priority 1: _lclFieldOptions set by prepareEncryptedSchema() helper
@@ -670,9 +688,8 @@ function lclCryptoPlugin(schema, options) {
    * Pre-find hook: rewrite query for blind index support.
    */
   schema.pre('find', async function () {
-    const resolvedEntityName = entityName || this.model.modelName;
     const query = this.getQuery();
-    const rewrittenQuery = await rewriteQuery(query, encryptedFields, codec, keyVaultService, serializer, resolvedEntityName);
+    const rewrittenQuery = await queryTransformer.rewriteQuery(query, encryptedFields);
     this.setQuery(rewrittenQuery);
   });
 
@@ -680,9 +697,8 @@ function lclCryptoPlugin(schema, options) {
    * Pre-findOne hook: rewrite query for blind index support.
    */
   schema.pre('findOne', async function () {
-    const resolvedEntityName = entityName || this.model.modelName;
     const query = this.getQuery();
-    const rewrittenQuery = await rewriteQuery(query, encryptedFields, codec, keyVaultService, serializer, resolvedEntityName);
+    const rewrittenQuery = await queryTransformer.rewriteQuery(query, encryptedFields);
     this.setQuery(rewrittenQuery);
   });
 

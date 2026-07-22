@@ -11,6 +11,8 @@ const {
   KeyVaultService,
   LocalCmkProvider,
   ProgrammaticCryptoService,
+  BsonStructuredValueCodec,
+  MongooseStorageAdapter,
   LclConfig,
   MongoVaultStore
 } = require('../src');
@@ -35,6 +37,8 @@ async function main() {
   // 4. Create ProgrammaticCryptoService
   const programmatic = new ProgrammaticCryptoService({
     keyVaultService,
+    storageAdapter: new MongooseStorageAdapter(),
+    structuredValueCodec: new BsonStructuredValueCodec(),
     algorithm: 'AES_256_GCM'
   });
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const { validateVaultDocument, createVaultDocument, REQUIRED_FIELDS, VALID_KEY_STATUSES } = require('../../../src/adapter/VaultDocument');
+const { validateVaultDocument, createVaultDocument, REQUIRED_FIELDS, VALID_KEY_STATUSES } = require('../../../src/spi/VaultDocument');
 
 describe('VaultDocument (unit)', () => {
   function validDoc(overrides = {}) {

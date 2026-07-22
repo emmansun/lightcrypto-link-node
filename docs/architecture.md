@@ -1,5 +1,43 @@
 # Architecture
 
+## SPI Layer (src/spi/)
+
+lightcrypto-link-node defines 4 abstract SPI (Service Provider Interface) base classes for pluggable data storage:
+
+| SPI Interface | Purpose | Default Implementation |
+|---------------|---------|----------------------|
+| `StorageAdapter` | Encrypted payload construction and parsing | `MongooseStorageAdapter` |
+| `DocumentAccessor` | Field-level document access | `MongooseDocumentAccessor` |
+| `StructuredValueCodec` | Structured value serialization (DOC/COL/MAP) | `BsonStructuredValueCodec` |
+| `QueryTransformer` | Blind-index query rewriting | `MongooseQueryTransformer` |
+
+### StorageAdapter
+
+Defines the on-disk sub-document format. The Mongoose implementation produces `{ c, _e: 1, _t, b? }` payloads compatible with Java `MongoStorageAdapter`.
+
+### DocumentAccessor
+
+Abstracts field access on documents. The Mongoose implementation uses bracket notation for plain objects and Mongoose Documents.
+
+### StructuredValueCodec
+
+Serializes structured values (DOC, MAP, COL) to binary. The BSON implementation matches Java `BsonStructuredValueCodec` byte-for-byte.
+
+### QueryTransformer
+
+Rewrites query fields and values for blind-index lookups. The Mongoose implementation appends `.b` to field paths and computes HMAC-based blind indexes.
+
+Custom SPI implementations can be provided via plugin options:
+
+```javascript
+schema.plugin(lclCryptoPlugin, {
+  keyVaultService,
+  cmkProvider,
+  storageAdapter: new CustomStorageAdapter(),
+  structuredValueCodec: new CustomStructuredValueCodec()
+});
+```
+
 ## Envelope Encryption
 
 lightcrypto-link-node uses envelope encryption:

@@ -1,7 +1,7 @@
 'use strict';
 
-const VaultStore = require('./VaultStore');
-const OptimisticLockError = require('./OptimisticLockError');
+const VaultStore = require('../spi/VaultStore');
+const OptimisticLockError = require('../spi/OptimisticLockError');
 
 /**
  * Deep copy a value using structured clone (Node 17+) or JSON round-trip fallback.
