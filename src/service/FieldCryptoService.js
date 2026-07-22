@@ -148,12 +148,7 @@ class FieldCryptoService {
       throw new DecryptionError(`Invalid encryption marker: _e = ${subDocument._e}`);
     }
 
-    // Validate _k (kid) field
-    if (!subDocument._k) {
-      throw new FatalCryptoError("missing '_k' (kid) field in encrypted sub-document");
-    }
-
-    // Get algorithm from sub-document
+    // Get algorithm from sub-document or Wire Format header
     const algo = subDocument._a || algorithm;
     if (!algo) {
       throw new DecryptionError('Unsupported algorithm: no algorithm specified in sub-document');

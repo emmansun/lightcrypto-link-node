@@ -1,144 +1,163 @@
 'use strict';
 
 const crypto = require('crypto');
-const { getKeyVaultModel } = require('../model/KeyVaultDocument');
 const CryptoCodec = require('../crypto/CryptoCodec');
 
 const DEFAULT_CACHE_TTL = 3600000; // 1 hour
 
 /**
- * KeyVaultService - Manages per-entity DEK/HMAC key pairs with versioning,
+ * KeyVaultService - Manages per-namespace DEK/HMAC key pairs with versioning,
  * rotation, KCV verification, and in-memory caching.
+ *
+ * Aligned with Java KeyVaultService: each namespace (canonical form, e.g.
+ * "default.default.User#phone") gets its own vault document and DEK/HMAC key pair.
  */
 class KeyVaultService {
   /**
    * @param {Object} options
-   * @param {mongoose.Connection} options.connection - Mongoose connection
+   * @param {VaultStore} options.vaultStore - VaultStore implementation for vault persistence
    * @param {CmkProvider} options.cmkProvider - CMK provider for key wrapping
    * @param {number} [options.cacheTtl=3600000] - Cache TTL in milliseconds
    */
   constructor(options) {
-    this._connection = options.connection;
+    this._vaultStore = options.vaultStore;
     this._cmkProvider = options.cmkProvider;
     this._cacheTtl = options.cacheTtl || DEFAULT_CACHE_TTL;
     this._codec = new CryptoCodec();
+    /** @type {Map<string, Object>} Per-namespace key contexts: canonicalNamespace -> cache entry */
     this._cache = new Map();
   }
 
   /**
-   * Ensure the vault is initialized for the given entity.
+   * Ensure the vault is initialized for the given namespace.
    * Creates vault document with initial DEK/HMAC key pair if not exists.
-   * @param {string} entityName - Entity name (e.g., "User")
-   * @returns {Promise<Object>} Cache entry with dek, hmacKey, activeKid
+   * @param {string} namespace - Canonical namespace (e.g., "default.default.User#phone")
+   * @returns {Promise<void>}
    */
-  async ensureVaultInitialized(entityName) {
-    // Check cache first
-    const cached = this._getFromCache(entityName);
-    if (cached) return cached;
+  async ensureVaultInitialized(namespace) {
+    const cached = this._getFromCache(namespace);
+    if (cached) return;
 
-    const vaultId = `lcl-dek-${entityName}`;
-    const VaultModel = getKeyVaultModel(this._connection);
-
-    let vaultDoc = await VaultModel.findById(vaultId);
+    let vaultDoc = await this._vaultStore.load(namespace);
 
     if (!vaultDoc) {
-      // Initialize new vault
-      vaultDoc = await this._initializeVault(VaultModel, vaultId, entityName);
+      vaultDoc = await this._initializeVault(namespace);
     }
 
-    // Load and cache keys
-    return this._loadAndCacheKeys(vaultDoc, entityName);
+    await this._verifyAndLoadKeys(vaultDoc, namespace);
   }
 
   /**
-   * Get the active kid for an entity.
-   * @param {string} entityName
+   * Get the active kid for a namespace.
+   * @param {string} namespace - Canonical namespace
    * @returns {Promise<string>}
    */
-  async getActiveKid(entityName) {
-    const entry = await this.ensureVaultInitialized(entityName);
+  async getActiveKid(namespace) {
+    const entry = await this._ensureCached(namespace);
     return entry.activeKid;
   }
 
   /**
-   * Get the DEK for a specific kid.
-   * @param {string} entityName
-   * @param {string} kid
-   * @returns {Promise<Buffer>}
+   * Get the active DEK version for a namespace.
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<number>}
    */
-  async getDek(entityName, kid) {
-    const entry = await this.ensureVaultInitialized(entityName);
-    if (kid === entry.activeKid) {
-      return entry.dek;
-    }
-    // Look up historical key
-    const keyInfo = entry.allKeys?.get(kid);
-    if (!keyInfo) {
-      throw new Error(`Key not found for kid: ${kid} in vault for entity: ${entityName}`);
-    }
-    return keyInfo.dek;
+  async getActiveDekVersion(namespace) {
+    const entry = await this._ensureCached(namespace);
+    return entry.activeDekVersion;
   }
 
   /**
-   * Get the HMAC key for a specific kid.
-   * @param {string} entityName
-   * @param {string} kid
+   * Get the unwrapped DEK for a specific kid.
+   * Searches across all cached namespaces.
+   * @param {string} kid - Key identifier
    * @returns {Promise<Buffer>}
    */
-  async getHmacKey(entityName, kid) {
-    const entry = await this.ensureVaultInitialized(entityName);
-    if (kid === entry.activeKid) {
-      return entry.hmacKey;
+  async getDek(kid) {
+    for (const [, entry] of this._cache) {
+      const pair = entry.resolvedKeys.get(kid);
+      if (pair) return pair.dek;
     }
-    const keyInfo = entry.allKeys?.get(kid);
-    if (!keyInfo) {
-      throw new Error(`Key not found for kid: ${kid} in vault for entity: ${entityName}`);
-    }
-    return keyInfo.hmacKey;
+    throw new Error(`Unknown kid: ${kid}`);
   }
 
   /**
-   * Rotate the DEK for the given entity.
-   * Marks current ACTIVE key as ROTATED and creates new ACTIVE key.
-   * @param {string} entityName
-   * @returns {Promise<Object>} New cache entry
+   * Get the unwrapped HMAC key for a specific kid.
+   * Searches across all cached namespaces.
+   * @param {string} kid - Key identifier
+   * @returns {Promise<Buffer>}
    */
-  async rotateDek(entityName) {
-    const vaultId = `lcl-dek-${entityName}`;
-    const VaultModel = getKeyVaultModel(this._connection);
+  async getHmacKey(kid) {
+    for (const [, entry] of this._cache) {
+      const pair = entry.resolvedKeys.get(kid);
+      if (pair) return pair.hmacKey;
+    }
+    throw new Error(`Unknown kid: ${kid}`);
+  }
 
-    const vaultDoc = await VaultModel.findById(vaultId);
+  /**
+   * Get the active HMAC key for the given namespace.
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<Buffer>}
+   */
+  async getActiveHmacKey(namespace) {
+    const kid = await this.getActiveKid(namespace);
+    return this.getHmacKey(kid);
+  }
+
+  /**
+   * Get the unwrapped DEK for a specific namespace and DEK version.
+   * @param {string} namespace - Canonical namespace
+   * @param {number} dekVersion - DEK version number
+   * @returns {Promise<Buffer>}
+   */
+  async getDekByVersion(namespace, dekVersion) {
+    const entry = await this._ensureCached(namespace);
+    const pair = entry.resolvedKeysByVersion.get(dekVersion);
+    if (!pair) {
+      throw new Error(`No key found for namespace ${namespace} with dekVersion ${dekVersion}`);
+    }
+    return pair.dek;
+  }
+
+  /**
+   * Rotate the DEK for the given namespace.
+   * Marks all ACTIVE keys as ROTATED and creates a new ACTIVE key.
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<void>}
+   */
+  async rotateDek(namespace) {
+    const vaultDoc = await this._vaultStore.load(namespace);
     if (!vaultDoc) {
-      throw new Error(`Vault not found for entity: ${entityName}`);
+      throw new Error(`Vault not found for namespace: ${namespace}`);
     }
 
-    // Find current active key
-    const activeKey = vaultDoc.keys.find(k => k.status === 'ACTIVE');
-    if (!activeKey) {
-      throw new Error('No active key found in vault');
-    }
+    const expectedVersion = vaultDoc.v;
+    let maxVersion = 0;
 
-    // Mark current as ROTATED
-    activeKey.status = 'ROTATED';
+    // Mark all ACTIVE keys as ROTATED, find max version from kids
+    for (const keyEntry of vaultDoc.keys) {
+      if (keyEntry.status === 'ACTIVE') {
+        keyEntry.status = 'ROTATED';
+      }
+      const ver = this._parseVersion(keyEntry.kid);
+      if (ver > maxVersion) maxVersion = ver;
+    }
 
     // Generate new key pair
+    const newVersion = maxVersion + 1;
+    const newKid = this._generateKid(newVersion);
+
     const newDek = crypto.randomBytes(32);
     const newHmacKey = crypto.randomBytes(32);
 
-    // Wrap new keys
     const wrappedDek = await this._cmkProvider.wrap(newDek);
     const wrappedHmk = await this._cmkProvider.wrap(newHmacKey);
 
-    // Compute KCV and binding
     const dekKcv = this._codec.computeKcv(newDek, 'AES_256_GCM');
     const hmkKcv = this._codec.computeKcv(newHmacKey, 'AES_256_GCM');
     const binding = this._codec.computeBinding(newHmacKey, newDek);
 
-    // Generate new kid
-    const newVersion = vaultDoc.v + 1;
-    const newKid = this._generateKid(newVersion);
-
-    // Add new key entry
     vaultDoc.keys.push({
       kid: newKid,
       status: 'ACTIVE',
@@ -159,86 +178,56 @@ class KeyVaultService {
     });
 
     vaultDoc.activeKid = newKid;
-    vaultDoc.v = newVersion;
+    vaultDoc.v = expectedVersion + 1;
 
-    // Optimistic locking: update only if activeKid and v match
-    const result = await VaultModel.updateOne(
-      { _id: vaultId, activeKid: activeKey.kid, v: newVersion - 1 },
-      {
-        $set: {
-          activeKid: newKid,
-          v: newVersion,
-          updatedAt: new Date(),
-          'keys': vaultDoc.keys
-        }
+    // CAS update via vaultStore.rotate() — throws OptimisticLockError on conflict
+    try {
+      await this._vaultStore.rotate(vaultDoc);
+    } catch (e) {
+      if (e.name === 'OptimisticLockError') {
+        throw new Error(
+          `Concurrent vault rotation detected for namespace: ${namespace}. Please retry.`
+        );
       }
-    );
-
-    if (result.modifiedCount === 0) {
-      throw new Error(`Concurrent key rotation detected for entity: ${entityName}. Another rotation may be in progress.`);
+      throw e;
     }
 
-    // Update cache
-    const cacheEntry = {
-      dek: newDek,
-      hmacKey: newHmacKey,
-      activeKid: newKid,
-      dekVersion: newVersion,
-      expiresAt: Date.now() + this._cacheTtl,
-      allKeys: new Map()
-    };
-
-    // Populate allKeys for backward compatibility
-    for (const keyEntry of vaultDoc.keys) {
-      if (keyEntry.kid === newKid) {
-        cacheEntry.allKeys.set(keyEntry.kid, { dek: newDek, hmacKey: newHmacKey });
-      }
-    }
-
-    this._cache.set(entityName, cacheEntry);
-    return cacheEntry;
+    // Reload keys into cache
+    await this._verifyAndLoadKeys(vaultDoc, namespace);
   }
 
   /**
    * Flush the DEK cache, securely destroying key material.
    */
   flushCache() {
-    for (const [entityName, entry] of this._cache) {
-      // Securely destroy key buffers
-      if (entry.dek) crypto.randomFillSync(entry.dek);
-      if (entry.hmacKey) crypto.randomFillSync(entry.hmacKey);
-      if (entry.allKeys) {
-        for (const [, keyInfo] of entry.allKeys) {
-          if (keyInfo.dek) crypto.randomFillSync(keyInfo.dek);
-          if (keyInfo.hmacKey) crypto.randomFillSync(keyInfo.hmacKey);
-        }
-      }
+    for (const [, entry] of this._cache) {
+      this._destroyKeyMaterial(entry);
     }
     this._cache.clear();
   }
 
+  // ===== Internal methods =====
+
   /**
-   * Initialize a new vault for an entity.
+   * Initialize a new vault for a namespace.
    * @private
    */
-  async _initializeVault(VaultModel, vaultId, entityName) {
+  async _initializeVault(namespace) {
     const dek = crypto.randomBytes(32);
     const hmacKey = crypto.randomBytes(32);
 
-    // Wrap keys with CMK
     const wrappedDek = await this._cmkProvider.wrap(dek);
     const wrappedHmk = await this._cmkProvider.wrap(hmacKey);
 
-    // Compute KCV and binding
     const dekKcv = this._codec.computeKcv(dek, 'AES_256_GCM');
     const hmkKcv = this._codec.computeKcv(hmacKey, 'AES_256_GCM');
     const binding = this._codec.computeBinding(hmacKey, dek);
 
-    // Generate kid
     const kid = this._generateKid(1);
 
-    const vaultDoc = new VaultModel({
-      _id: vaultId,
+    const now = new Date();
+    const vaultDoc = {
+      id: namespace,
       v: 1,
       status: 'ACTIVE',
       activeKid: kid,
@@ -264,17 +253,15 @@ class KeyVaultService {
         provider: this._cmkProvider.getProviderId(),
         id: this._cmkProvider.getPublicReference()
       },
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
+      createdAt: now,
+      updatedAt: now
+    };
 
-    // Use insertOne with ordered:false to handle race conditions
     try {
-      await vaultDoc.save();
+      await this._vaultStore.save(vaultDoc);
     } catch (e) {
       if (e.code === 11000) {
-        // Duplicate key - another instance already initialized
-        return VaultModel.findById(vaultId);
+        return this._vaultStore.load(namespace);
       }
       throw e;
     }
@@ -283,87 +270,133 @@ class KeyVaultService {
   }
 
   /**
-   * Load vault document and cache the unwrapped keys.
+   * Verify vault integrity (KCV + binding) and load keys into cache.
+   * Aligned with Java verifyAndLoadKeys().
    * @private
    */
-  async _loadAndCacheKeys(vaultDoc, entityName) {
-    const allKeys = new Map();
-    let activeDek = null;
-    let activeHmacKey = null;
+  async _verifyAndLoadKeys(vaultDoc, namespace) {
+    if (!vaultDoc.keys || vaultDoc.keys.length === 0) {
+      throw new Error(`Vault has no key entries for namespace: ${namespace}`);
+    }
+
+    const resolvedKeys = new Map();
+    const resolvedKeysByVersion = new Map();
+    let activeKid = null;
+    let activeDekVersion = 0;
+    let activeCount = 0;
 
     for (const keyEntry of vaultDoc.keys) {
-      // Unwrap DEK — pass stored cmkVersion in metadata for CMK rotation support
+      // Unwrap DEK
       const dek = await this._cmkProvider.unwrap({
         ciphertext: keyEntry.dek.wrapped,
         algorithm: keyEntry.dek.algorithm,
         metadata: { cmkVersion: keyEntry.dek.cmkVersion }
       });
 
-      // Unwrap HMAC key — pass stored cmkVersion in metadata for CMK rotation support
+      // Unwrap HMAC key
       const hmacKey = await this._cmkProvider.unwrap({
         ciphertext: keyEntry.hmk.wrapped,
         algorithm: keyEntry.hmk.algorithm,
         metadata: { cmkVersion: keyEntry.hmk.cmkVersion }
       });
 
-      // Verify KCV
+      // Verify DEK KCV
       const dekKcv = this._codec.computeKcv(dek, 'AES_256_GCM');
       if (dekKcv !== keyEntry.dek.kcv) {
-        throw new Error(`KCV mismatch for DEK (kid: ${keyEntry.kid}) in vault: ${entityName}. Expected: ${keyEntry.dek.kcv}, got: ${dekKcv}`);
+        throw new Error(
+          `DEK KCV mismatch for kid ${keyEntry.kid}! Vault integrity compromised.`
+        );
       }
 
+      // Verify HMAC KCV
       const hmkKcv = this._codec.computeKcv(hmacKey, 'AES_256_GCM');
       if (hmkKcv !== keyEntry.hmk.kcv) {
-        throw new Error(`KCV mismatch for HMAC key (kid: ${keyEntry.kid}) in vault: ${entityName}. Expected: ${keyEntry.hmk.kcv}, got: ${hmkKcv}`);
+        throw new Error(
+          `HMAC Key KCV mismatch for kid ${keyEntry.kid}! Vault integrity compromised.`
+        );
       }
 
       // Verify binding
       const binding = this._codec.computeBinding(hmacKey, dek);
       if (binding !== keyEntry.binding) {
-        throw new Error(`Binding mismatch for key (kid: ${keyEntry.kid}) in vault: ${entityName}. Expected: ${keyEntry.binding}, got: ${binding}`);
+        throw new Error(
+          `Key binding mismatch for kid ${keyEntry.kid}! DEK/HMAC key pair corrupted.`
+        );
       }
 
-      allKeys.set(keyEntry.kid, { dek, hmacKey });
+      const pair = { dek, hmacKey };
+      resolvedKeys.set(keyEntry.kid, pair);
 
-      if (keyEntry.kid === vaultDoc.activeKid) {
-        activeDek = dek;
-        activeHmacKey = hmacKey;
+      const version = this._parseVersion(keyEntry.kid);
+      resolvedKeysByVersion.set(version, pair);
+
+      if (keyEntry.status === 'ACTIVE') {
+        activeKid = keyEntry.kid;
+        activeDekVersion = version;
+        activeCount++;
       }
     }
 
-    if (!activeDek) {
-      throw new Error(`No active DEK found for entity: ${entityName}`);
+    if (activeCount === 0) {
+      throw new Error(`Vault has no ACTIVE key entry for namespace: ${namespace}`);
+    }
+    if (activeCount > 1) {
+      throw new Error(`Vault has multiple ACTIVE key entries for namespace: ${namespace}`);
     }
 
     const cacheEntry = {
-      dek: activeDek,
-      hmacKey: activeHmacKey,
-      activeKid: vaultDoc.activeKid,
-      dekVersion: vaultDoc.v,
-      expiresAt: Date.now() + this._cacheTtl,
-      allKeys
+      activeKid,
+      activeDekVersion,
+      resolvedKeys,
+      resolvedKeysByVersion,
+      expiresAt: Date.now() + this._cacheTtl
     };
 
-    this._cache.set(entityName, cacheEntry);
-    return cacheEntry;
+    this._cache.set(namespace, cacheEntry);
+  }
+
+  /**
+   * Ensure a namespace is cached and return its entry.
+   * @private
+   */
+  async _ensureCached(namespace) {
+    const cached = this._getFromCache(namespace);
+    if (cached) return cached;
+    await this.ensureVaultInitialized(namespace);
+    const entry = this._cache.get(namespace);
+    if (!entry) {
+      throw new Error(`Vault not initialized for namespace: ${namespace}`);
+    }
+    return entry;
   }
 
   /**
    * Get cache entry if valid (not expired).
    * @private
    */
-  _getFromCache(entityName) {
-    const entry = this._cache.get(entityName);
+  _getFromCache(namespace) {
+    const entry = this._cache.get(namespace);
     if (entry && entry.expiresAt > Date.now()) {
       return entry;
     }
     if (entry) {
-      // Expired - destroy key material
-      if (entry.dek) crypto.randomFillSync(entry.dek);
-      if (entry.hmacKey) crypto.randomFillSync(entry.hmacKey);
-      this._cache.delete(entityName);
+      this._destroyKeyMaterial(entry);
+      this._cache.delete(namespace);
     }
     return null;
+  }
+
+  /**
+   * Securely destroy key material in a cache entry.
+   * @private
+   */
+  _destroyKeyMaterial(entry) {
+    if (entry.resolvedKeys) {
+      for (const [, pair] of entry.resolvedKeys) {
+        if (pair.dek) crypto.randomFillSync(pair.dek);
+        if (pair.hmacKey) crypto.randomFillSync(pair.hmacKey);
+      }
+    }
   }
 
   /**
@@ -375,6 +408,24 @@ class KeyVaultService {
   _generateKid(version) {
     const hex = crypto.randomBytes(4).toString('hex');
     return `v${version}-${hex}`;
+  }
+
+  /**
+   * Parse version number from kid (e.g., "v1-a3b2c1d4" -> 1).
+   * @param {string} kid
+   * @returns {number}
+   * @private
+   */
+  _parseVersion(kid) {
+    const dashIdx = kid.indexOf('-');
+    if (dashIdx < 2 || kid[0] !== 'v') {
+      throw new Error(`Invalid kid format: ${kid}`);
+    }
+    const ver = parseInt(kid.substring(1, dashIdx), 10);
+    if (isNaN(ver)) {
+      throw new Error(`Invalid kid format: ${kid}`);
+    }
+    return ver;
   }
 }
 

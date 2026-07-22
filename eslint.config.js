@@ -24,6 +24,7 @@ module.exports = [
         global: 'readonly',
         TextEncoder: 'readonly',
         TextDecoder: 'readonly',
+        structuredClone: 'readonly',
       }
     },
     rules: {

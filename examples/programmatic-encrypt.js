@@ -11,7 +11,8 @@ const {
   KeyVaultService,
   LocalCmkProvider,
   ProgrammaticCryptoService,
-  LclConfig
+  LclConfig,
+  MongoVaultStore
 } = require('../src');
 
 async function main() {
@@ -26,7 +27,7 @@ async function main() {
 
   // 3. Create KeyVaultService
   const keyVaultService = new KeyVaultService({
-    connection: mongoose.connection,
+    vaultStore: new MongoVaultStore(mongoose.connection.getClient().db(mongoose.connection.name)),
     cmkProvider,
     cacheTtl: config.cacheTtl
   });
@@ -39,33 +40,31 @@ async function main() {
 
   // ─── encryptValue / decryptValue ───────────────────────────────────────────
 
-  // Encrypt a scalar value
-  const phoneEncrypted = await programmatic.encryptValue('13800138000', 'User');
+  // Encrypt a scalar value with per-field namespace
+  const phoneEncrypted = await programmatic.encryptValue('13800138000', 'User#phone');
   console.log('Encrypted sub-document:', {
     _e: phoneEncrypted._e,
-    _k: phoneEncrypted._k,
-    _a: phoneEncrypted._a,
     _t: phoneEncrypted._t,
     c: phoneEncrypted.c.length > 30 ? phoneEncrypted.c.slice(0, 30) + '...' : phoneEncrypted.c
   });
 
-  // Decrypt it back
+  // Decrypt it back (no entityName needed — namespace extracted from Wire Format blob)
   const phoneDecrypted = await programmatic.decryptValue(phoneEncrypted);
   console.log('Decrypted phone:', phoneDecrypted); // '13800138000'
 
   // ─── encryptValue with different types ─────────────────────────────────────
 
-  const ageEncrypted = await programmatic.encryptValue(42, 'User');
+  const ageEncrypted = await programmatic.encryptValue(42, 'User#age');
   console.log('Age type marker:', ageEncrypted._t); // 'INT'
 
-  const activeEncrypted = await programmatic.encryptValue(true, 'User');
+  const activeEncrypted = await programmatic.encryptValue(true, 'User#active');
   console.log('Active type marker:', activeEncrypted._t); // 'BOOL'
 
   // ─── decryptDocument on raw MongoDB results ────────────────────────────────
 
   // Insert encrypted data using the raw driver
-  const phoneSubDoc = await programmatic.encryptValue('13900139000', 'User');
-  const ssnSubDoc = await programmatic.encryptValue('123-45-6789', 'User');
+  const phoneSubDoc = await programmatic.encryptValue('13900139000', 'User#phone');
+  const ssnSubDoc = await programmatic.encryptValue('123-45-6789', 'User#ssn');
 
   await mongoose.connection.collection('contacts').insertOne({
     name: 'Alice',

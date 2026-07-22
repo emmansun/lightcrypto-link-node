@@ -4,30 +4,29 @@ const crypto = require('crypto');
 const ProgrammaticCryptoService = require('../../../src/service/ProgrammaticCryptoService');
 const { DecryptionError } = require('../../../src/service/FieldCryptoService');
 
+const NS_USER_PHONE = 'User#phone';
+const CANONICAL_NS = 'default.default.User#phone';
+
 describe('ProgrammaticCryptoService', () => {
   let dek;
-  let hmacKey;
   let activeKid;
   let mockKeyVaultService;
 
   beforeEach(() => {
     dek = crypto.randomBytes(32);
-    hmacKey = crypto.randomBytes(32);
     activeKid = 'v1-abcd1234';
 
     mockKeyVaultService = {
-      ensureVaultInitialized: jest.fn().mockResolvedValue({
-        dek,
-        hmacKey,
-        activeKid
-      }),
+      ensureVaultInitialized: jest.fn().mockResolvedValue(undefined),
+      getActiveDekVersion: jest.fn().mockResolvedValue(1),
+      getActiveKid: jest.fn().mockResolvedValue(activeKid),
       getDek: jest.fn().mockResolvedValue(dek),
-      getHmacKey: jest.fn().mockResolvedValue(hmacKey),
-      getActiveKid: jest.fn().mockResolvedValue(activeKid)
+      getDekByVersion: jest.fn().mockResolvedValue(dek),
+      getActiveHmacKey: jest.fn().mockResolvedValue(crypto.randomBytes(32))
     };
   });
 
-  // ─── 2.1 Constructor validation ────────────────────────────────────────────
+  // ─── Constructor ─────────────────────────────────────────────────────────
   describe('constructor', () => {
     test('throws if keyVaultService is not provided', () => {
       expect(() => new ProgrammaticCryptoService({})).toThrow(/keyVaultService/);
@@ -60,7 +59,7 @@ describe('ProgrammaticCryptoService', () => {
     });
   });
 
-  // ─── 2.2 encryptValue ──────────────────────────────────────────────────────
+  // ─── encryptValue ─────────────────────────────────────────────────────────
   describe('encryptValue', () => {
     let svc;
     beforeEach(() => {
@@ -68,64 +67,72 @@ describe('ProgrammaticCryptoService', () => {
     });
 
     test('encrypts a string value with correct markers', async () => {
-      const result = await svc.encryptValue('13800138000', 'User');
+      const result = await svc.encryptValue('13800138000', NS_USER_PHONE);
       expect(result._e).toBe(1);
-      expect(result._k).toBe(activeKid);
-      expect(result._a).toBe('AES_256_GCM');
       expect(result._t).toBe('STR');
       expect(typeof result.c).toBe('string');
-      expect(result._entity).toBe('User');
+      // No _k, _a, _entity fields (aligned with Java)
+      expect(result._k).toBeUndefined();
+      expect(result._a).toBeUndefined();
+      expect(result._entity).toBeUndefined();
     });
 
     test('encrypts a number value with INT type marker', async () => {
-      const result = await svc.encryptValue(42, 'User');
+      const result = await svc.encryptValue(42, NS_USER_PHONE);
       expect(result._t).toBe('INT');
     });
 
     test('encrypts a boolean value with BOOL type marker', async () => {
-      const result = await svc.encryptValue(true, 'User');
+      const result = await svc.encryptValue(true, NS_USER_PHONE);
       expect(result._t).toBe('BOOL');
     });
 
     test('encrypts a double value with DOUBLE type marker', async () => {
-      const result = await svc.encryptValue(3.14, 'User');
+      const result = await svc.encryptValue(3.14, NS_USER_PHONE);
       expect(result._t).toBe('DOUBLE');
     });
 
     test('uses custom algorithm when provided', async () => {
-      const result = await svc.encryptValue('secret', 'User', 'SM4_CBC');
-      expect(result._a).toBe('SM4_CBC');
+      const result = await svc.encryptValue('secret', NS_USER_PHONE, 'SM4_CBC');
+      // Algorithm is encoded in Wire Format blob, not stored as _a
+      expect(typeof result.c).toBe('string');
     });
 
     test('returns null for null value', async () => {
-      const result = await svc.encryptValue(null, 'User');
+      const result = await svc.encryptValue(null, NS_USER_PHONE);
       expect(result).toBeNull();
     });
 
     test('returns undefined for undefined value', async () => {
-      const result = await svc.encryptValue(undefined, 'User');
+      const result = await svc.encryptValue(undefined, NS_USER_PHONE);
       expect(result).toBeUndefined();
     });
 
-    test('throws for missing entityName', async () => {
-      await expect(svc.encryptValue('data')).rejects.toThrow(/entityName/i);
+    test('throws for missing namespace', async () => {
+      await expect(svc.encryptValue('data')).rejects.toThrow(/namespace/i);
     });
 
-    test('throws for empty string entityName', async () => {
-      await expect(svc.encryptValue('data', '')).rejects.toThrow(/entityName/i);
+    test('throws for empty string namespace', async () => {
+      await expect(svc.encryptValue('data', '')).rejects.toThrow(/namespace/i);
     });
 
     test('throws for unsupported algorithm', async () => {
-      await expect(svc.encryptValue('data', 'User', 'UNKNOWN_ALGO')).rejects.toThrow(/Unsupported algorithm/);
+      await expect(svc.encryptValue('data', NS_USER_PHONE, 'UNKNOWN_ALGO')).rejects.toThrow(/Unsupported algorithm/);
     });
 
-    test('calls ensureVaultInitialized with correct entityName', async () => {
-      await svc.encryptValue('data', 'Order');
-      expect(mockKeyVaultService.ensureVaultInitialized).toHaveBeenCalledWith('Order');
+    test('calls ensureVaultInitialized with canonical namespace', async () => {
+      await svc.encryptValue('data', NS_USER_PHONE);
+      expect(mockKeyVaultService.ensureVaultInitialized).toHaveBeenCalledWith(CANONICAL_NS);
+    });
+
+    test('calls getActiveDekVersion and getDek', async () => {
+      await svc.encryptValue('data', NS_USER_PHONE);
+      expect(mockKeyVaultService.getActiveDekVersion).toHaveBeenCalledWith(CANONICAL_NS);
+      expect(mockKeyVaultService.getDek).toHaveBeenCalledWith(activeKid);
     });
   });
 
-  // ─── 2.3 decryptValue ──────────────────────────────────────────────────────
+  // ─── decryptValue ─────────────────────────────────────────────────────────
   describe('decryptValue', () => {
     let svc;
     beforeEach(() => {
@@ -134,33 +141,27 @@ describe('ProgrammaticCryptoService', () => {
 
     test('round-trip: encrypt then decrypt returns original string', async () => {
       const original = '13800138000';
-      const subDoc = await svc.encryptValue(original, 'User');
+      const subDoc = await svc.encryptValue(original, NS_USER_PHONE);
       const decrypted = await svc.decryptValue(subDoc);
       expect(decrypted).toBe(original);
     });
 
     test('round-trip: encrypt then decrypt returns original number', async () => {
       const original = 42;
-      const subDoc = await svc.encryptValue(original, 'User');
+      const subDoc = await svc.encryptValue(original, NS_USER_PHONE);
       const decrypted = await svc.decryptValue(subDoc);
       expect(decrypted).toBe(original);
     });
 
     test('round-trip: encrypt then decrypt returns original boolean', async () => {
       const original = true;
-      const subDoc = await svc.encryptValue(original, 'User');
+      const subDoc = await svc.encryptValue(original, NS_USER_PHONE);
       const decrypted = await svc.decryptValue(subDoc);
       expect(decrypted).toBe(true);
     });
 
-    test('round-trip with explicit entityName parameter', async () => {
-      const subDoc = await svc.encryptValue('hello', 'User');
-      const decrypted = await svc.decryptValue(subDoc, 'User');
-      expect(decrypted).toBe('hello');
-    });
-
     test('round-trip with custom algorithm SM4_CBC', async () => {
-      const subDoc = await svc.encryptValue('sm4-test', 'User', 'SM4_CBC');
+      const subDoc = await svc.encryptValue('sm4-test', NS_USER_PHONE, 'SM4_CBC');
       const decrypted = await svc.decryptValue(subDoc);
       expect(decrypted).toBe('sm4-test');
     });
@@ -176,27 +177,29 @@ describe('ProgrammaticCryptoService', () => {
     });
 
     test('throws for missing _e marker', async () => {
-      const subDoc = { _k: 'v1-abcd1234', _t: 'STR', c: Buffer.from('test') };
+      const subDoc = { _t: 'STR', c: 'test' };
       await expect(svc.decryptValue(subDoc)).rejects.toThrow(/_e/);
     });
 
-    test('throws for missing _k marker', async () => {
-      const subDoc = { _e: 1, _t: 'STR', c: Buffer.from('test') };
-      await expect(svc.decryptValue(subDoc)).rejects.toThrow(/_k/);
-    });
-
     test('throws for missing _t marker', async () => {
-      const subDoc = { _e: 1, _k: 'v1-abcd1234', c: Buffer.from('test') };
+      const subDoc = { _e: 1, c: 'test' };
       await expect(svc.decryptValue(subDoc)).rejects.toThrow(/_t/);
     });
 
-    test('throws when entityName is not available (no param, no _entity)', async () => {
-      const subDoc = { _e: 1, _k: 'v1-abcd1234', _a: 'AES_256_GCM', _t: 'STR', c: Buffer.from('test') };
-      await expect(svc.decryptValue(subDoc)).rejects.toThrow(/entityName/i);
+    test('throws when ciphertext is missing', async () => {
+      const subDoc = { _e: 1, _t: 'STR' };
+      await expect(svc.decryptValue(subDoc)).rejects.toThrow(/[Cc]iphertext|Missing/);
+    });
+
+    test('decryptValue extracts namespace from Wire Format blob', async () => {
+      const subDoc = await svc.encryptValue('test', NS_USER_PHONE);
+      await svc.decryptValue(subDoc);
+      // getDekByVersion should be called with the canonical namespace from the blob
+      expect(mockKeyVaultService.getDekByVersion).toHaveBeenCalledWith(CANONICAL_NS, 1);
     });
   });
 
-  // ─── 2.4 decryptDocument ───────────────────────────────────────────────────
+  // ─── decryptDocument ──────────────────────────────────────────────────────
   describe('decryptDocument', () => {
     let svc;
     beforeEach(() => {
@@ -204,8 +207,8 @@ describe('ProgrammaticCryptoService', () => {
     });
 
     test('decrypts multiple encrypted fields in a document', async () => {
-      const phoneSubDoc = await svc.encryptValue('13800138000', 'User');
-      const ssnSubDoc = await svc.encryptValue('123-45-6789', 'User');
+      const phoneSubDoc = await svc.encryptValue('13800138000', NS_USER_PHONE);
+      const ssnSubDoc = await svc.encryptValue('123-45-6789', 'User#ssn');
 
       const doc = { _id: 'abc', phone: phoneSubDoc, ssn: ssnSubDoc };
       const result = await svc.decryptDocument(doc, 'User', ['phone', 'ssn']);
@@ -215,7 +218,7 @@ describe('ProgrammaticCryptoService', () => {
     });
 
     test('skips non-encrypted fields (plain values remain unchanged)', async () => {
-      const phoneSubDoc = await svc.encryptValue('13800138000', 'User');
+      const phoneSubDoc = await svc.encryptValue('13800138000', NS_USER_PHONE);
 
       const doc = { _id: 'abc', name: 'John', phone: phoneSubDoc };
       const result = await svc.decryptDocument(doc, 'User', ['phone']);
@@ -227,12 +230,11 @@ describe('ProgrammaticCryptoService', () => {
     test('skips fields not present in document without error', async () => {
       const doc = { _id: 'abc' };
       const result = await svc.decryptDocument(doc, 'User', ['phone']);
-
       expect(result).toEqual({ _id: 'abc' });
     });
 
     test('returns the same object reference (mutates in-place)', async () => {
-      const phoneSubDoc = await svc.encryptValue('13800138000', 'User');
+      const phoneSubDoc = await svc.encryptValue('13800138000', NS_USER_PHONE);
       const doc = { _id: 'abc', phone: phoneSubDoc };
 
       const result = await svc.decryptDocument(doc, 'User', ['phone']);
@@ -253,34 +255,21 @@ describe('ProgrammaticCryptoService', () => {
     });
   });
 
-  // ─── 2.5 Error handling ────────────────────────────────────────────────────
+  // ─── Error handling ──────────────────────────────────────────────────────
   describe('error handling', () => {
-    let svc;
-    beforeEach(() => {
-      svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
-    });
+    test('wrong DEK causes decryption failure', async () => {
+      const svc = new ProgrammaticCryptoService({ keyVaultService: mockKeyVaultService });
+      const subDoc = await svc.encryptValue('secret-data', NS_USER_PHONE);
 
-    test('wrong entity DEK causes decryption failure (KCV/key mismatch)', async () => {
-      // Encrypt with the default DEK
-      const subDoc = await svc.encryptValue('secret-data', 'User');
-
-      // Create a second service with a different DEK for a different entity
+      // Create a second service with a different DEK
       const differentDek = crypto.randomBytes(32);
       const mockKvs2 = {
         ...mockKeyVaultService,
-        getDek: jest.fn().mockResolvedValue(differentDek)
+        getDekByVersion: jest.fn().mockResolvedValue(differentDek)
       };
       const svc2 = new ProgrammaticCryptoService({ keyVaultService: mockKvs2 });
 
-      // Attempt to decrypt with wrong DEK — should fail
-      await expect(svc2.decryptValue(subDoc, 'Order')).rejects.toThrow();
-    });
-
-    test('unsupported algorithm in sub-document throws DecryptionError', async () => {
-      // Use legacy Buffer format so that _a is actually consulted for algorithm selection
-      const subDoc = { _e: 1, _k: activeKid, _a: 'UNKNOWN_ALGO_XYZ', _t: 'STR', c: Buffer.from('test') };
-
-      await expect(svc.decryptValue(subDoc, 'User')).rejects.toThrow(/Unsupported algorithm/);
+      await expect(svc2.decryptValue(subDoc)).rejects.toThrow();
     });
   });
 });

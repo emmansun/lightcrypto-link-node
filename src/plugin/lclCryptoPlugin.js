@@ -1,10 +1,13 @@
 'use strict';
 
 const { FieldCryptoService } = require('../service/FieldCryptoService');
+const KeyVaultService = require('../service/KeyVaultService');
+const MongoVaultStore = require('../adapter/MongoVaultStore');
 const CryptoCodec = require('../crypto/CryptoCodec');
 const TypeSerializer = require('../service/TypeSerializer');
 const { rewriteQuery } = require('./queryRewriter');
 const Namespace = require('../namespace/Namespace');
+const WireFormatDecoder = require('../format/WireFormatDecoder');
 
 /**
  * Check if a value is a mongoose Schema instance.
@@ -348,7 +351,40 @@ function prepareEncryptedSchema(definition) {
  * @param {string} [options.algorithm='AES_256_GCM'] - Default encryption algorithm
  */
 function lclCryptoPlugin(schema, options) {
-  const keyVaultService = options.keyVaultService;
+  // Resolve keyVaultService from options:
+  // 1. If keyVaultService is provided directly, use it
+  // 2. If vaultStore is provided, construct KeyVaultService
+  // 3. If connection is provided, extract native client and construct MongoVaultStore + KeyVaultService
+  // 4. Throw if none of the above
+  let keyVaultService = options.keyVaultService;
+
+  if (!keyVaultService) {
+    let vaultStore = options.vaultStore;
+
+    if (!vaultStore && options.connection) {
+      // Extract native MongoClient from Mongoose Connection
+      const client = options.connection.getClient();
+      const db = client.db(options.connection.name);
+      vaultStore = new MongoVaultStore(db);
+    }
+
+    if (!vaultStore) {
+      throw new Error(
+        'lclCryptoPlugin requires one of: keyVaultService, vaultStore, or connection. ' +
+        'Provide a KeyVaultService instance, a VaultStore implementation, or a Mongoose Connection.'
+      );
+    }
+
+    if (!options.cmkProvider) {
+      throw new Error('lclCryptoPlugin requires cmkProvider when constructing KeyVaultService from vaultStore or connection');
+    }
+
+    keyVaultService = new KeyVaultService({
+      vaultStore,
+      cmkProvider: options.cmkProvider,
+      cacheTtl: options.cacheTtl
+    });
+  }
   const entityName = options.entityName;
   const algorithm = options.algorithm || 'AES_256_GCM';
   const fieldCryptoService = new FieldCryptoService();
@@ -465,12 +501,21 @@ function lclCryptoPlugin(schema, options) {
 
   /**
    * Pre-save hook: encrypt marked fields before persistence.
+   * Per-field vault routing: each encrypted field gets its own vault/DEK.
    */
   schema.pre('save', async function () {
     const resolvedEntityName = entityName || this.constructor.modelName;
-    const vaultEntry = await keyVaultService.ensureVaultInitialized(resolvedEntityName);
 
     for (const [pathName, fieldConfig] of encryptedFields) {
+      // Construct per-field canonical namespace and ensure vault is initialized
+      const fieldNamespace = Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`);
+      const canonicalNs = fieldNamespace.canonical();
+      await keyVaultService.ensureVaultInitialized(canonicalNs);
+      const activeKid = await keyVaultService.getActiveKid(canonicalNs);
+      const dekVersion = await keyVaultService.getActiveDekVersion(canonicalNs);
+      const dek = await keyVaultService.getDek(activeKid);
+      const hmacKey = await keyVaultService.getHmacKey(activeKid);
+
       // Nested encrypted field inside sub-document
       if (fieldConfig.isNested && !fieldConfig.isArrayElement) {
         const parentValue = this.get(fieldConfig.parentPath);
@@ -483,16 +528,16 @@ function lclCryptoPlugin(schema, options) {
         const encrypted = fieldCryptoService.encryptField(
           leafValue,
           pathName,
-          vaultEntry.dek,
-          vaultEntry.hmacKey,
-          vaultEntry.activeKid,
+          dek,
+          hmacKey,
+          activeKid,
           algorithm,
           {
             blindIndex: false,
             mongooseType: fieldConfig.mongooseType,
             customFieldName: fieldConfig.customFieldName,
-            namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
-            dekVersion: vaultEntry.dekVersion
+            namespace: fieldNamespace,
+            dekVersion: dekVersion
           }
         );
 
@@ -516,16 +561,16 @@ function lclCryptoPlugin(schema, options) {
           const encrypted = fieldCryptoService.encryptField(
             leafValue,
             pathName,
-            vaultEntry.dek,
-            vaultEntry.hmacKey,
-            vaultEntry.activeKid,
+            dek,
+            hmacKey,
+            activeKid,
             algorithm,
             {
               blindIndex: false,
               mongooseType: fieldConfig.mongooseType,
               customFieldName: fieldConfig.customFieldName,
-              namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
-              dekVersion: vaultEntry.dekVersion
+              namespace: fieldNamespace,
+              dekVersion: dekVersion
             }
           );
           elem[fieldConfig.leafField] = encrypted;
@@ -548,7 +593,6 @@ function lclCryptoPlugin(schema, options) {
             encryptedArray.push(elem);
             continue;
           }
-          // Skip already encrypted elements
           if (typeof elem === 'object' && elem._e === 1) {
             encryptedArray.push(elem);
             continue;
@@ -556,16 +600,16 @@ function lclCryptoPlugin(schema, options) {
           const encrypted = fieldCryptoService.encryptField(
             elem,
             pathName,
-            vaultEntry.dek,
-            vaultEntry.hmacKey,
-            vaultEntry.activeKid,
+            dek,
+            hmacKey,
+            activeKid,
             algorithm,
             {
               blindIndex: false,
               mongooseType: fieldConfig.mongooseType,
               customFieldName: fieldConfig.customFieldName,
-              namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
-              dekVersion: vaultEntry.dekVersion
+              namespace: fieldNamespace,
+              dekVersion: dekVersion
             }
           );
           encryptedArray.push(encrypted);
@@ -578,8 +622,8 @@ function lclCryptoPlugin(schema, options) {
         blindIndex: fieldConfig.blindIndex,
         mongooseType: fieldConfig.mongooseType,
         customFieldName: fieldConfig.customFieldName,
-        namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
-        dekVersion: vaultEntry.dekVersion
+        namespace: fieldNamespace,
+        dekVersion: dekVersion
       };
 
       // Pass structuredType for whole-object/whole-array encryption
@@ -592,9 +636,9 @@ function lclCryptoPlugin(schema, options) {
       const encrypted = fieldCryptoService.encryptField(
         value,
         pathName,
-        vaultEntry.dek,
-        vaultEntry.hmacKey,
-        vaultEntry.activeKid,
+        dek,
+        hmacKey,
+        activeKid,
         algorithm,
         encryptOptions
       );
@@ -627,10 +671,8 @@ function lclCryptoPlugin(schema, options) {
    */
   schema.pre('find', async function () {
     const resolvedEntityName = entityName || this.model.modelName;
-    const vaultEntry = await keyVaultService.ensureVaultInitialized(resolvedEntityName);
-
     const query = this.getQuery();
-    const rewrittenQuery = rewriteQuery(query, encryptedFields, codec, vaultEntry.hmacKey, serializer, resolvedEntityName);
+    const rewrittenQuery = await rewriteQuery(query, encryptedFields, codec, keyVaultService, serializer, resolvedEntityName);
     this.setQuery(rewrittenQuery);
   });
 
@@ -639,24 +681,18 @@ function lclCryptoPlugin(schema, options) {
    */
   schema.pre('findOne', async function () {
     const resolvedEntityName = entityName || this.model.modelName;
-    const vaultEntry = await keyVaultService.ensureVaultInitialized(resolvedEntityName);
-
     const query = this.getQuery();
-    const rewrittenQuery = rewriteQuery(query, encryptedFields, codec, vaultEntry.hmacKey, serializer, resolvedEntityName);
+    const rewrittenQuery = await rewriteQuery(query, encryptedFields, codec, keyVaultService, serializer, resolvedEntityName);
     this.setQuery(rewrittenQuery);
   });
 
   /**
    * Decrypt all encrypted fields in a document.
-   * Supports backward compatibility: uses each sub-document's `_k` (kid) to resolve the correct DEK.
+   * Per-field vault routing: decrypts each field using Wire Format blob's namespace + dekVersion.
    * @param {mongoose.Document} doc
    */
   async function decryptDocument(doc) {
     if (!doc) return;
-    const resolvedEntityName = entityName || doc.constructor.modelName;
-
-    // Ensure vault is initialized (loads keys into cache)
-    await keyVaultService.ensureVaultInitialized(resolvedEntityName);
 
     for (const [pathName, fieldConfig] of encryptedFields) {
       // Nested encrypted field inside sub-document
@@ -667,10 +703,7 @@ function lclCryptoPlugin(schema, options) {
         const leafValue = parentValue[fieldConfig.leafField];
         if (!leafValue || typeof leafValue !== 'object' || leafValue._e !== 1) continue;
 
-        const kid = leafValue._k;
-        const dek = await keyVaultService.getDek(resolvedEntityName, kid);
-        const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
-        const decrypted = fieldCryptoService.decryptField(leafValue, dek, hmacKey, algorithm);
+        const decrypted = await decryptSubDoc(leafValue);
         parentValue[fieldConfig.leafField] = decrypted;
         continue;
       }
@@ -685,10 +718,7 @@ function lclCryptoPlugin(schema, options) {
           const leafValue = elem[fieldConfig.leafField];
           if (!leafValue || typeof leafValue !== 'object' || leafValue._e !== 1) continue;
 
-          const kid = leafValue._k;
-          const dek = await keyVaultService.getDek(resolvedEntityName, kid);
-          const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
-          const decrypted = fieldCryptoService.decryptField(leafValue, dek, hmacKey, algorithm);
+          const decrypted = await decryptSubDoc(leafValue);
           elem[fieldConfig.leafField] = decrypted;
         }
         continue;
@@ -707,10 +737,7 @@ function lclCryptoPlugin(schema, options) {
               decryptedArray.push(elem);
               continue;
             }
-            const kid = elem._k;
-            const dek = await keyVaultService.getDek(resolvedEntityName, kid);
-            const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
-            const decrypted = fieldCryptoService.decryptField(elem, dek, hmacKey, algorithm);
+            const decrypted = await decryptSubDoc(elem);
             decryptedArray.push(decrypted);
           }
           doc.set(pathName, decryptedArray);
@@ -723,14 +750,37 @@ function lclCryptoPlugin(schema, options) {
       // Single encrypted sub-document (scalar, DOC, COL, MAP)
       if (typeof fieldValue !== 'object' || fieldValue._e !== 1) continue;
 
-      // Use sub-document's kid to resolve the correct DEK (supports key rotation)
-      const kid = fieldValue._k;
-      const dek = await keyVaultService.getDek(resolvedEntityName, kid);
-      const hmacKey = await keyVaultService.getHmacKey(resolvedEntityName, kid);
-
-      const decrypted = fieldCryptoService.decryptField(fieldValue, dek, hmacKey, algorithm);
+      const decrypted = await decryptSubDoc(fieldValue);
       doc.set(pathName, decrypted);
     }
+  }
+
+  /**
+   * Decrypt a single encrypted sub-document by decoding namespace + dekVersion
+   * from the Wire Format V1 blob.
+   * @param {Object} subDoc - Encrypted sub-document with _e, _t, c
+   * @returns {Promise<*>} Decrypted value
+   */
+  async function decryptSubDoc(subDoc) {
+    const ciphertext = subDoc.c;
+
+    let namespace, dekVersion;
+    if (typeof ciphertext === 'string') {
+      const decoded = WireFormatDecoder.decodeFromBase64Url(ciphertext);
+      namespace = decoded.namespace;
+      dekVersion = decoded.dekVersion;
+    } else if (Buffer.isBuffer(ciphertext)) {
+      const decoded = WireFormatDecoder.decode(ciphertext);
+      namespace = decoded.namespace;
+      dekVersion = decoded.dekVersion;
+    } else {
+      throw new Error('Unsupported ciphertext format in encrypted sub-document');
+    }
+
+    await keyVaultService.ensureVaultInitialized(namespace);
+    const dek = await keyVaultService.getDekByVersion(namespace, dekVersion);
+
+    return fieldCryptoService.decryptField(subDoc, dek, null, algorithm);
   }
 }
 

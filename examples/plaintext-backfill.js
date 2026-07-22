@@ -29,7 +29,8 @@ const {
   lclCryptoPlugin,
   KeyVaultService,
   LocalCmkProvider,
-  prepareEncryptedSchema
+  prepareEncryptedSchema,
+  MongoVaultStore
 } = require('../src');
 
 // ─── Parse CLI arguments ────────────────────────────────────────────
@@ -152,7 +153,7 @@ async function runBackfill(opts, env) {
   // 2. Setup crypto services
   const cmkProvider = new LocalCmkProvider(env.cmkKey);
   const keyVaultService = new KeyVaultService({
-    connection: mongoose.connection,
+    vaultStore: new MongoVaultStore(mongoose.connection.getClient().db(mongoose.connection.name)),
     cmkProvider,
     cacheTtl: 60000
   });

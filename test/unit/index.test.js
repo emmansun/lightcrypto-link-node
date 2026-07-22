@@ -162,10 +162,35 @@ describe('index.js - public API exports', () => {
     });
   });
 
-  describe('Model module', () => {
-    test('exports getKeyVaultModel', () => {
-      expect(lib.getKeyVaultModel).toBeDefined();
-      expect(typeof lib.getKeyVaultModel).toBe('function');
+  describe('Adapter module', () => {
+    test('exports VaultStore', () => {
+      expect(lib.VaultStore).toBeDefined();
+      expect(typeof lib.VaultStore).toBe('function');
+    });
+
+    test('exports validateVaultDocument', () => {
+      expect(lib.validateVaultDocument).toBeDefined();
+      expect(typeof lib.validateVaultDocument).toBe('function');
+    });
+
+    test('exports createVaultDocument', () => {
+      expect(lib.createVaultDocument).toBeDefined();
+      expect(typeof lib.createVaultDocument).toBe('function');
+    });
+
+    test('exports OptimisticLockError', () => {
+      expect(lib.OptimisticLockError).toBeDefined();
+      expect(typeof lib.OptimisticLockError).toBe('function');
+    });
+
+    test('exports MongoVaultStore', () => {
+      expect(lib.MongoVaultStore).toBeDefined();
+      expect(typeof lib.MongoVaultStore).toBe('function');
+    });
+
+    test('exports InMemoryVaultStore', () => {
+      expect(lib.InMemoryVaultStore).toBeDefined();
+      expect(typeof lib.InMemoryVaultStore).toBe('function');
     });
   });
 
@@ -188,6 +213,11 @@ describe('index.js - public API exports', () => {
     test('FieldCryptoService can be instantiated', () => {
       const service = new lib.FieldCryptoService();
       expect(service).toBeInstanceOf(lib.FieldCryptoService);
+    });
+
+    test('InMemoryVaultStore can be instantiated', () => {
+      const store = new lib.InMemoryVaultStore();
+      expect(store).toBeInstanceOf(lib.VaultStore);
     });
 
     test('LocalCmkProvider can be instantiated with valid key', () => {

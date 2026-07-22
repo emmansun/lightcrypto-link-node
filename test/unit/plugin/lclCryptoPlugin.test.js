@@ -222,6 +222,86 @@ describe('lclCryptoPlugin - prepareEncryptedSchema', () => {
   });
 });
 
+describe('lclCryptoPlugin - vaultStore / connection resolution', () => {
+  const { lclCryptoPlugin } = require('../../../src/plugin/lclCryptoPlugin');
+
+  test('throws when neither keyVaultService, vaultStore, nor connection is provided', () => {
+    const definition = {
+      phone: { type: String, encrypt: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    expect(() => {
+      schema.plugin(lclCryptoPlugin, { cmkProvider: {} });
+    }).toThrow(/requires one of.*keyVaultService.*vaultStore.*connection/);
+  });
+
+  test('accepts keyVaultService directly (backward compat)', () => {
+    const definition = {
+      phone: { type: String, encrypt: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const mockKeyVaultService = { ensureVaultInitialized: jest.fn() };
+    // Should not throw
+    schema.plugin(lclCryptoPlugin, { keyVaultService: mockKeyVaultService });
+    expect(schema._lclEncryptedFields).toBeDefined();
+  });
+
+  test('accepts vaultStore + cmkProvider to construct KeyVaultService', () => {
+    const definition = {
+      phone: { type: String, encrypt: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const InMemoryVaultStore = require('../../../src/adapter/InMemoryVaultStore');
+    const vaultStore = new InMemoryVaultStore();
+    const cmkProvider = { getProviderId: () => 'local', getPublicReference: () => 'ref' };
+
+    // Should not throw
+    schema.plugin(lclCryptoPlugin, { vaultStore, cmkProvider });
+    expect(schema._lclEncryptedFields).toBeDefined();
+  });
+
+  test('throws when vaultStore provided without cmkProvider', () => {
+    const definition = {
+      phone: { type: String, encrypt: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const InMemoryVaultStore = require('../../../src/adapter/InMemoryVaultStore');
+    const vaultStore = new InMemoryVaultStore();
+
+    expect(() => {
+      schema.plugin(lclCryptoPlugin, { vaultStore });
+    }).toThrow(/requires cmkProvider/);
+  });
+
+  test('accepts connection + cmkProvider to construct MongoVaultStore', () => {
+    const definition = {
+      phone: { type: String, encrypt: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const mockDb = { collection: jest.fn().mockReturnValue({}) };
+    const mockConnection = {
+      getClient: jest.fn().mockReturnValue({ db: jest.fn().mockReturnValue(mockDb) }),
+      name: 'testdb'
+    };
+    const cmkProvider = { getProviderId: () => 'local', getPublicReference: () => 'ref' };
+
+    // Should not throw
+    schema.plugin(lclCryptoPlugin, { connection: mockConnection, cmkProvider });
+    expect(mockConnection.getClient).toHaveBeenCalled();
+    expect(schema._lclEncryptedFields).toBeDefined();
+  });
+});
+
 describe('lclCryptoPlugin - resolveMode / validation', () => {
   test('plugin throws for blindIndex on whole-object field', () => {
     const { lclCryptoPlugin } = require('../../../src/plugin/lclCryptoPlugin');

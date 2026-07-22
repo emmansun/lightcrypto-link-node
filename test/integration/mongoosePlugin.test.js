@@ -5,6 +5,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   KeyVaultService,
   LocalCmkProvider,
+  MongoVaultStore,
   lclCryptoPlugin,
   prepareEncryptedSchema,
   CryptoCodec,
@@ -24,8 +25,12 @@ describe('Integration: Mongoose Plugin + KeyVault + Field Encryption', () => {
     connection = await mongoose.createConnection(uri).asPromise();
 
     const cmkProvider = new LocalCmkProvider(TEST_CMK_HEX);
+    // Use connection.getClient() to construct MongoVaultStore (the convenience path)
+    const nativeClient = connection.getClient();
+    const db = nativeClient.db(connection.name);
+    const vaultStore = new MongoVaultStore(db);
     keyVaultService = new KeyVaultService({
-      connection,
+      vaultStore,
       cmkProvider,
       cacheTtl: 60000
     });
@@ -208,8 +213,8 @@ describe('Integration: Mongoose Plugin + KeyVault + Field Encryption', () => {
       const user1 = new UserModel({ name: 'Alice', phone: '13800138000' });
       await user1.save();
 
-      // Rotate DEK
-      await keyVaultService.rotateDek('User');
+      // Rotate DEK for the phone field's namespace (per-field vault)
+      await keyVaultService.rotateDek('default.default.User#phone');
       keyVaultService.flushCache();
 
       // Save new document with new DEK

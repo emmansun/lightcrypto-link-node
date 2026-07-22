@@ -6,6 +6,7 @@ const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 const { FieldCryptoService, DecryptionError } = require('./FieldCryptoService');
 const Namespace = require('../namespace/Namespace');
+const WireFormatDecoder = require('../format/WireFormatDecoder');
 
 const DEFAULT_ALGORITHM = 'AES_256_GCM';
 
@@ -20,7 +21,7 @@ const DEFAULT_ALGORITHM = 'AES_256_GCM';
 class ProgrammaticCryptoService {
   /**
    * @param {Object} options
-   * @param {KeyVaultService} options.keyVaultService  - Required. Manages per-entity DEK lifecycle.
+   * @param {KeyVaultService} options.keyVaultService  - Required. Manages per-namespace DEK lifecycle.
    * @param {FieldCryptoService} [options.fieldCryptoService] - Optional. Created internally if omitted.
    * @param {string} [options.algorithm='AES_256_GCM'] - Default encryption algorithm.
    */
@@ -41,44 +42,42 @@ class ProgrammaticCryptoService {
   /**
    * Encrypt a scalar value into a canonical LCL sub-document.
    *
-   * @param {*} value          - Plaintext value to encrypt. Returns null/undefined as-is.
-   * @param {string} entityName - Entity name used to resolve the active DEK (e.g., "User").
+   * @param {*} value - Plaintext value to encrypt. Returns null/undefined as-is.
+   * @param {string} namespace - Namespace string (e.g., "User#phone" or "default.default.User#phone").
    * @param {string} [algorithm] - Override the default algorithm for this operation.
-   * @param {import('../namespace/Namespace')} [namespace] - Optional namespace override.
-   * @returns {Promise<Object|null|undefined>} Sub-document { _e, _k, _a, _t, c, _entity }, or null/undefined if input is null/undefined.
-   * @throws {Error} If entityName is missing.
+   * @returns {Promise<Object|null|undefined>} Sub-document { _e, _t, c }, or null/undefined if input is null/undefined.
    */
-  async encryptValue(value, entityName, algorithm, namespace) {
+  async encryptValue(value, namespace, algorithm) {
     if (value === null || value === undefined) {
       return value;
     }
-    if (!entityName) {
-      throw new Error('entityName is required');
+    if (!namespace) {
+      throw new Error('namespace is required');
     }
 
     const algo = algorithm || this._algorithm;
 
-    // Resolve active kid and DEK via keyVaultService
-    const vaultEntry = await this._keyVaultService.ensureVaultInitialized(entityName);
-    const dekVersion = vaultEntry.dekVersion || 1;
+    // Parse namespace and get canonical form
+    const ns = Namespace.parse(namespace);
+    const canonicalNs = ns.canonical();
+
+    // Ensure vault is initialized
+    await this._keyVaultService.ensureVaultInitialized(canonicalNs);
+    const dekVersion = await this._keyVaultService.getActiveDekVersion(canonicalNs);
+    const activeKid = await this._keyVaultService.getActiveKid(canonicalNs);
+    const dek = await this._keyVaultService.getDek(activeKid);
 
     // Validate algorithm early
     this._codec.getEncryptor(algo);
 
-    // Construct namespace from entityName if not provided
-    const ns = namespace || Namespace.parse(`${entityName}#${entityName}`);
-
     // Structured type detection: plain objects and arrays use BSON binary serialization
     if (Array.isArray(value)) {
       const plaintext = this._bsonCodec.encodeCollection(value);
-      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo, ns, dekVersion);
+      const ciphertext = this._codec.encrypt(dek, plaintext, algo, ns, dekVersion);
       return {
         _e: 1,
-        _k: vaultEntry.activeKid,
-        _a: algo,
         _t: 'COL',
-        c: ciphertext,
-        _entity: entityName
+        c: ciphertext
       };
     }
 
@@ -90,14 +89,11 @@ class ProgrammaticCryptoService {
       value.constructor === Object
     ) {
       const plaintext = this._bsonCodec.encodeDocument(value);
-      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo, ns, dekVersion);
+      const ciphertext = this._codec.encrypt(dek, plaintext, algo, ns, dekVersion);
       return {
         _e: 1,
-        _k: vaultEntry.activeKid,
-        _a: algo,
         _t: 'DOC',
-        c: ciphertext,
-        _entity: entityName
+        c: ciphertext
       };
     }
 
@@ -109,29 +105,25 @@ class ProgrammaticCryptoService {
     const typeMarker = this._serializer.resolveTypeMarker(value);
 
     // Encrypt
-    const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo, ns, dekVersion);
+    const ciphertext = this._codec.encrypt(dek, plaintext, algo, ns, dekVersion);
 
-    // Build canonical sub-document
-    // _entity is stored for standalone decryptValue calls (no entityName param needed)
+    // Build canonical sub-document (aligned with Java: only _e, _t, c)
     return {
       _e: 1,
-      _k: vaultEntry.activeKid,
-      _a: algo,
       _t: typeMarker,
-      c: ciphertext,
-      _entity: entityName
+      c: ciphertext
     };
   }
 
   /**
    * Decrypt a canonical LCL sub-document back to a JavaScript value.
+   * Extracts namespace and dekVersion from the Wire Format V1 blob.
    *
-   * @param {Object|null|undefined} encryptedSubDocument - Sub-document with _e, _k, _t, c markers. Returns null/undefined as-is.
-   * @param {string} [entityName] - Entity name. If omitted, uses _entity stored in sub-document.
+   * @param {Object|null|undefined} encryptedSubDocument - Sub-document with _e, _t, c markers.
    * @returns {Promise<*>} Decrypted plaintext value, or null/undefined if input is null/undefined.
    * @throws {Error} If required markers are missing or DEK cannot be resolved.
    */
-  async decryptValue(encryptedSubDocument, entityName) {
+  async decryptValue(encryptedSubDocument) {
     if (encryptedSubDocument === null || encryptedSubDocument === undefined) {
       return encryptedSubDocument;
     }
@@ -147,31 +139,40 @@ class ProgrammaticCryptoService {
       throw new DecryptionError(`Invalid encryption marker: _e = ${encryptedSubDocument._e}`);
     }
 
-    // Validate _k (kid) marker
-    if (!encryptedSubDocument._k) {
-      throw new Error('Missing required marker: _k');
-    }
-
     // Validate _t (type) marker
     if (!encryptedSubDocument._t) {
       throw new Error('Missing required marker: _t');
     }
 
-    // Resolve entityName: explicit param takes precedence, then _entity from sub-document
-    const resolvedEntity = entityName || encryptedSubDocument._entity;
-    if (!resolvedEntity) {
-      throw new Error(
-        'entityName is required: pass it as the second argument or ensure _entity is present in the sub-document'
-      );
+    const ciphertext = encryptedSubDocument.c;
+    if (!ciphertext) {
+      throw new Error('Missing ciphertext field: c');
     }
 
-    const kid = encryptedSubDocument._k;
+    // Decode Wire Format blob to get namespace and dekVersion
+    let decoded;
+    try {
+      if (typeof ciphertext === 'string') {
+        decoded = WireFormatDecoder.decodeFromBase64Url(ciphertext);
+      } else if (Buffer.isBuffer(ciphertext)) {
+        decoded = WireFormatDecoder.decode(ciphertext);
+      } else {
+        throw new DecryptionError('Unsupported ciphertext format');
+      }
+    } catch (e) {
+      if (e.name === 'DecryptionError') throw e;
+      throw new DecryptionError(`Invalid Wire Format blob: ${e.message}`);
+    }
 
-    // Resolve DEK by kid via keyVaultService
-    const dek = await this._keyVaultService.getDek(resolvedEntity, kid);
+    const namespace = decoded.namespace;
+    const dekVersion = decoded.dekVersion;
+
+    // Ensure vault initialized and get DEK by version
+    await this._keyVaultService.ensureVaultInitialized(namespace);
+    const dek = await this._keyVaultService.getDekByVersion(namespace, dekVersion);
 
     // Determine algorithm
-    const algo = encryptedSubDocument._a || this._algorithm;
+    const algo = encryptedSubDocument._a || decoded.algorithm || this._algorithm;
 
     // Delegate to FieldCryptoService for decryption and deserialization
     return this._fieldCryptoService.decryptField(encryptedSubDocument, dek, null, algo);
@@ -182,7 +183,7 @@ class ProgrammaticCryptoService {
    * Mutates the document in-place and returns the same reference.
    *
    * @param {Object}   rawDocument       - Raw document (e.g., from aggregation or db.collection.find()).
-   * @param {string}   entityName        - Entity name for DEK resolution.
+   * @param {string}   entityName        - Entity name for namespace construction (e.g., "User").
    * @param {string[]} encryptedFields   - Array of field names to decrypt.
    * @returns {Promise<Object>} The same rawDocument reference, mutated with decrypted values.
    */
@@ -197,9 +198,6 @@ class ProgrammaticCryptoService {
       throw new Error('encryptedFields must be an array');
     }
 
-    // Ensure vault is loaded into cache
-    await this._keyVaultService.ensureVaultInitialized(entityName);
-
     for (const fieldName of encryptedFields) {
       const subDoc = rawDocument[fieldName];
 
@@ -208,7 +206,7 @@ class ProgrammaticCryptoService {
         continue;
       }
 
-      rawDocument[fieldName] = await this.decryptValue(subDoc, entityName);
+      rawDocument[fieldName] = await this.decryptValue(subDoc);
     }
 
     return rawDocument;

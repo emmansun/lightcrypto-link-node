@@ -12,16 +12,18 @@ const Namespace = require('../namespace/Namespace');
 
 /**
  * Rewrite a query object to use blind index fields for encrypted fields.
+ * Uses per-field HMAC keys for blind index computation.
+ *
  * @param {Object} query - Mongoose query filter
  * @param {Map<string, Object>} encryptedFields - Map of field name to field config
  * @param {import('../crypto/CryptoCodec')} codec - CryptoCodec instance for blind index generation
- * @param {Buffer} hmacKey - HMAC key
+ * @param {import('../service/KeyVaultService')} keyVaultService - KeyVaultService for per-field HMAC key resolution
  * @param {import('../service/TypeSerializer')} serializer - Type serializer
  * @param {string} [entityName] - Entity name for namespace construction
- * @returns {Object} Rewritten query
+ * @returns {Promise<Object>} Rewritten query
  * @throws {Error} If query targets an encrypted field without blindIndex
  */
-function rewriteQuery(query, encryptedFields, codec, hmacKey, serializer, entityName) {
+async function rewriteQuery(query, encryptedFields, codec, keyVaultService, serializer, entityName) {
   if (!query || typeof query !== 'object') {
     return query;
   }
@@ -43,16 +45,20 @@ function rewriteQuery(query, encryptedFields, codec, hmacKey, serializer, entity
     const effectiveFieldName = fieldConfig.customFieldName || fieldName;
     const value = rewritten[fieldName];
 
-    // Construct namespace for blind index
-    const nsEntity = entityName || effectiveFieldName;
-    const namespace = Namespace.parse(`${nsEntity}#${effectiveFieldName}`);
+    // Construct canonical namespace for this field
+    const ns = Namespace.parse(`${entityName}#${effectiveFieldName}`);
+    const canonicalNs = ns.canonical();
+
+    // Get per-field HMAC key
+    await keyVaultService.ensureVaultInitialized(canonicalNs);
+    const hmacKey = await keyVaultService.getActiveHmacKey(canonicalNs);
 
     if (typeof value === 'object' && value !== null && !Buffer.isBuffer(value)) {
       // Handle $in operator
       if (value.$in && Array.isArray(value.$in)) {
         const indexes = value.$in.map(v => {
           const serialized = serializer.serializeToString(v);
-          return codec.generateBlindIndex(hmacKey, namespace, effectiveFieldName, serialized);
+          return codec.generateBlindIndex(hmacKey, ns, effectiveFieldName, serialized);
         });
         rewritten[`${fieldName}.b`] = { $in: indexes };
         delete rewritten[fieldName];
@@ -67,7 +73,7 @@ function rewriteQuery(query, encryptedFields, codec, hmacKey, serializer, entity
 
     // Exact match rewrite
     const serialized = serializer.serializeToString(value);
-    const blindIndex = codec.generateBlindIndex(hmacKey, namespace, effectiveFieldName, serialized);
+    const blindIndex = codec.generateBlindIndex(hmacKey, ns, effectiveFieldName, serialized);
     rewritten[`${fieldName}.b`] = blindIndex;
     delete rewritten[fieldName];
   }

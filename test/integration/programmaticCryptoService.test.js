@@ -5,11 +5,18 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   KeyVaultService,
   LocalCmkProvider,
+  MongoVaultStore,
   ProgrammaticCryptoService,
   lclCryptoPlugin,
   prepareEncryptedSchema
 } = require('../../src');
 const Namespace = require('../../src/namespace/Namespace');
+
+const NS_USER_PHONE = 'User#phone';
+const NS_USER_SSN = 'User#ssn';
+const NS_USER_ADDRESS = 'User#address';
+const NS_USER_TAGS = 'User#tags';
+const NS_USER_METADATA = 'User#metadata';
 
 describe('Integration: ProgrammaticCryptoService', () => {
   let mongoServer;
@@ -24,8 +31,11 @@ describe('Integration: ProgrammaticCryptoService', () => {
     connection = await mongoose.createConnection(uri).asPromise();
 
     const cmkProvider = new LocalCmkProvider(TEST_CMK_HEX);
+    const nativeClient = connection.getClient();
+    const db = nativeClient.db(connection.name);
+    const vaultStore = new MongoVaultStore(db);
     keyVaultService = new KeyVaultService({
-      connection,
+      vaultStore,
       cmkProvider,
       cacheTtl: 60000
     });
@@ -54,7 +64,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
   // ─── 3.1 Full round-trip ──────────────────────────────────────────────────
   describe('Full round-trip: programmatic encrypt → MongoDB → programmatic decrypt', () => {
     test('encrypt, save, read back, and decrypt a string value', async () => {
-      const subDoc = await programmaticService.encryptValue('13800138000', 'User');
+      const subDoc = await programmaticService.encryptValue('13800138000', NS_USER_PHONE);
 
       // Save sub-document to MongoDB via raw collection
       const result = await connection.collection('users').insertOne({
@@ -65,40 +75,41 @@ describe('Integration: ProgrammaticCryptoService', () => {
       // Read back raw document
       const rawDoc = await connection.collection('users').findOne({ _id: result.insertedId });
       expect(rawDoc.phone._e).toBe(1);
-      expect(rawDoc.phone._k).toMatch(/^v1-/);
-      expect(rawDoc.phone._a).toBe('AES_256_GCM');
       expect(rawDoc.phone._t).toBe('STR');
+      // No _k, _a, _entity fields (aligned with Java)
+      expect(rawDoc.phone._k).toBeUndefined();
+      expect(rawDoc.phone._a).toBeUndefined();
 
-      // Decrypt via programmatic API
-      const decrypted = await programmaticService.decryptValue(rawDoc.phone, 'User');
+      // Decrypt via programmatic API (no entityName needed)
+      const decrypted = await programmaticService.decryptValue(rawDoc.phone);
       expect(decrypted).toBe('13800138000');
     });
 
     test('encrypt, save, read back, and decrypt a number value', async () => {
-      const subDoc = await programmaticService.encryptValue(42, 'User');
+      const subDoc = await programmaticService.encryptValue(42, NS_USER_PHONE);
 
       await connection.collection('users').insertOne({ name: 'Bob', age: subDoc });
       const rawDoc = await connection.collection('users').findOne({ name: 'Bob' });
 
       expect(rawDoc.age._t).toBe('INT');
-      const decrypted = await programmaticService.decryptValue(rawDoc.age, 'User');
+      const decrypted = await programmaticService.decryptValue(rawDoc.age);
       expect(decrypted).toBe(42);
     });
 
     test('encrypt, save, read back, and decrypt a boolean value', async () => {
-      const subDoc = await programmaticService.encryptValue(true, 'User');
+      const subDoc = await programmaticService.encryptValue(true, NS_USER_PHONE);
 
       await connection.collection('users').insertOne({ name: 'Charlie', active: subDoc });
       const rawDoc = await connection.collection('users').findOne({ name: 'Charlie' });
 
       expect(rawDoc.active._t).toBe('BOOL');
-      const decrypted = await programmaticService.decryptValue(rawDoc.active, 'User');
+      const decrypted = await programmaticService.decryptValue(rawDoc.active);
       expect(decrypted).toBe(true);
     });
 
     test('decryptDocument on raw find results', async () => {
-      const phoneSubDoc = await programmaticService.encryptValue('13800138000', 'User');
-      const ssnSubDoc = await programmaticService.encryptValue('123-45-6789', 'User');
+      const phoneSubDoc = await programmaticService.encryptValue('13800138000', NS_USER_PHONE);
+      const ssnSubDoc = await programmaticService.encryptValue('123-45-6789', NS_USER_SSN);
 
       await connection.collection('users').insertOne({
         name: 'Alice',
@@ -146,11 +157,11 @@ describe('Integration: ProgrammaticCryptoService', () => {
       expect(rawDoc.phone._e).toBe(1);
       expect(rawDoc.ssn._e).toBe(1);
 
-      // Decrypt using programmatic API (pass entityName since plugin docs lack _entity)
-      const decryptedPhone = await programmaticService.decryptValue(rawDoc.phone, 'User');
+      // Decrypt using programmatic API (no entityName needed — extracted from Wire Format)
+      const decryptedPhone = await programmaticService.decryptValue(rawDoc.phone);
       expect(decryptedPhone).toBe('13800138000');
 
-      const decryptedSsn = await programmaticService.decryptValue(rawDoc.ssn, 'User');
+      const decryptedSsn = await programmaticService.decryptValue(rawDoc.ssn);
       expect(decryptedSsn).toBe('123-45-6789');
     });
 
@@ -171,8 +182,8 @@ describe('Integration: ProgrammaticCryptoService', () => {
   describe('decryptDocument on aggregation pipeline results', () => {
     test('decrypts fields from aggregation output', async () => {
       // Insert encrypted documents using programmatic API
-      const phone1 = await programmaticService.encryptValue('13800138000', 'User');
-      const phone2 = await programmaticService.encryptValue('13900139000', 'User');
+      const phone1 = await programmaticService.encryptValue('13800138000', NS_USER_PHONE);
+      const phone2 = await programmaticService.encryptValue('13900139000', NS_USER_PHONE);
 
       await connection.collection('users').insertMany([
         { name: 'Alice', phone: phone1, department: 'Engineering' },
@@ -197,7 +208,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
     });
 
     test('handles mixed encrypted and non-encrypted documents in aggregation', async () => {
-      const phone = await programmaticService.encryptValue('13800138000', 'User');
+      const phone = await programmaticService.encryptValue('13800138000', NS_USER_PHONE);
 
       await connection.collection('users').insertMany([
         { name: 'Alice', phone, department: 'Eng' },
@@ -224,31 +235,31 @@ describe('Integration: ProgrammaticCryptoService', () => {
   describe('Structured Type Encryption — DOC and COL', () => {
     test('encryptValue with plain object → _t: DOC, decryptValue restores object', async () => {
       const obj = { city: 'Shanghai', zip: '200000' };
-      const subDoc = await programmaticService.encryptValue(obj, 'User');
+      const subDoc = await programmaticService.encryptValue(obj, NS_USER_ADDRESS);
 
       expect(subDoc._e).toBe(1);
       expect(subDoc._t).toBe('DOC');
       expect(typeof subDoc.c).toBe('string');
 
-      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      const decrypted = await programmaticService.decryptValue(subDoc);
       expect(decrypted).toEqual(obj);
     });
 
     test('encryptValue with array → _t: COL, decryptValue restores array', async () => {
       const arr = ['a', 'b', 'c'];
-      const subDoc = await programmaticService.encryptValue(arr, 'User');
+      const subDoc = await programmaticService.encryptValue(arr, NS_USER_TAGS);
 
       expect(subDoc._e).toBe(1);
       expect(subDoc._t).toBe('COL');
       expect(typeof subDoc.c).toBe('string');
 
-      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      const decrypted = await programmaticService.decryptValue(subDoc);
       expect(decrypted).toEqual(arr);
     });
 
     test('decryptDocument with DOC and COL fields', async () => {
-      const addressSubDoc = await programmaticService.encryptValue({ city: 'Shanghai', zip: '200000' }, 'User');
-      const tagsSubDoc = await programmaticService.encryptValue(['admin', 'active'], 'User');
+      const addressSubDoc = await programmaticService.encryptValue({ city: 'Shanghai', zip: '200000' }, NS_USER_ADDRESS);
+      const tagsSubDoc = await programmaticService.encryptValue(['admin', 'active'], NS_USER_TAGS);
 
       await connection.collection('users').insertOne({
         name: 'Alice',
@@ -267,20 +278,20 @@ describe('Integration: ProgrammaticCryptoService', () => {
     });
 
     test('encryptValue with empty object → _t: DOC, decryptValue restores empty object', async () => {
-      const subDoc = await programmaticService.encryptValue({}, 'User');
+      const subDoc = await programmaticService.encryptValue({}, NS_USER_ADDRESS);
       expect(subDoc._t).toBe('DOC');
       expect(typeof subDoc.c).toBe('string');
 
-      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      const decrypted = await programmaticService.decryptValue(subDoc);
       expect(decrypted).toEqual({});
     });
 
     test('encryptValue with empty array → _t: COL, decryptValue restores empty array', async () => {
-      const subDoc = await programmaticService.encryptValue([], 'User');
+      const subDoc = await programmaticService.encryptValue([], NS_USER_TAGS);
       expect(subDoc._t).toBe('COL');
       expect(typeof subDoc.c).toBe('string');
 
-      const decrypted = await programmaticService.decryptValue(subDoc, 'User');
+      const decrypted = await programmaticService.decryptValue(subDoc);
       expect(decrypted).toEqual([]);
     });
 
@@ -291,25 +302,24 @@ describe('Integration: ProgrammaticCryptoService', () => {
       const bsonCodec = new BsonCodec();
       const cryptoCodec = new CryptoCodec();
 
-      // Get the active DEK and kid
-      const vaultEntry = await programmaticService._keyVaultService.ensureVaultInitialized('User');
+      const canonicalNs = 'default.default.User#metadata';
+      await keyVaultService.ensureVaultInitialized(canonicalNs);
+      const activeKid = await keyVaultService.getActiveKid(canonicalNs);
+      const dekVersion = await keyVaultService.getActiveDekVersion(canonicalNs);
+      const dek = await keyVaultService.getDek(activeKid);
 
       const mapValue = { key1: 'value1', key2: 'value2' };
       const bsonBytes = bsonCodec.encodeDocument(mapValue);
-      const ns = Namespace.parse('User#User');
-      const dekVersion = vaultEntry.dekVersion || 1;
-      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM', ns, dekVersion);
+      const ns = Namespace.parse(NS_USER_METADATA);
+      const ciphertext = cryptoCodec.encrypt(dek, bsonBytes, 'AES_256_GCM', ns, dekVersion);
 
       const mapSubDoc = {
         _e: 1,
-        _k: vaultEntry.activeKid,
-        _a: 'AES_256_GCM',
         _t: 'MAP',
-        c: ciphertext,
-        _entity: 'User'
+        c: ciphertext
       };
 
-      const decrypted = await programmaticService.decryptValue(mapSubDoc, 'User');
+      const decrypted = await programmaticService.decryptValue(mapSubDoc);
       expect(decrypted).toEqual(mapValue);
     });
 
@@ -319,21 +329,21 @@ describe('Integration: ProgrammaticCryptoService', () => {
       const bsonCodec = new BsonCodec();
       const cryptoCodec = new CryptoCodec();
 
-      const vaultEntry = await programmaticService._keyVaultService.ensureVaultInitialized('User');
+      const canonicalNs = 'default.default.User#metadata';
+      await keyVaultService.ensureVaultInitialized(canonicalNs);
+      const activeKid = await keyVaultService.getActiveKid(canonicalNs);
+      const dekVersion = await keyVaultService.getActiveDekVersion(canonicalNs);
+      const dek = await keyVaultService.getDek(activeKid);
 
       const mapValue = { lang: 'en', theme: 'dark' };
       const bsonBytes = bsonCodec.encodeDocument(mapValue);
-      const ns2 = Namespace.parse('User#User');
-      const dekVersion2 = vaultEntry.dekVersion || 1;
-      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM', ns2, dekVersion2);
+      const ns = Namespace.parse(NS_USER_METADATA);
+      const ciphertext = cryptoCodec.encrypt(dek, bsonBytes, 'AES_256_GCM', ns, dekVersion);
 
       const mapSubDoc = {
         _e: 1,
-        _k: vaultEntry.activeKid,
-        _a: 'AES_256_GCM',
         _t: 'MAP',
-        c: ciphertext,
-        _entity: 'User'
+        c: ciphertext
       };
 
       await connection.collection('users').insertOne({

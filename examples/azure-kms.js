@@ -23,7 +23,7 @@
  */
 
 const mongoose = require('mongoose');
-const { AzureKmsProvider, KeyVaultService, lclCryptoPlugin, prepareEncryptedSchema } = require('../src');
+const { AzureKmsProvider, KeyVaultService, lclCryptoPlugin, prepareEncryptedSchema, MongoVaultStore } = require('../src');
 
 async function main() {
   // 1. Configure Azure Key Vault provider (LOCAL WRAP MODE - recommended)
@@ -43,7 +43,7 @@ async function main() {
 
   // 3. Create KeyVaultService with Azure provider
   const keyVaultService = new KeyVaultService({
-    connection: mongoose.connection,
+    vaultStore: new MongoVaultStore(mongoose.connection.getClient().db(mongoose.connection.name)),
     cmkProvider: azureProvider,
     cacheTtl: 3600000
   });

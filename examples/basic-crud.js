@@ -5,7 +5,7 @@
  */
 
 const mongoose = require('mongoose');
-const { lclCryptoPlugin, KeyVaultService, LocalCmkProvider, LclConfig, prepareEncryptedSchema } = require('../src');
+const { lclCryptoPlugin, KeyVaultService, LocalCmkProvider, LclConfig, prepareEncryptedSchema, MongoVaultStore } = require('../src');
 
 async function main() {
   // 1. Load configuration
@@ -21,7 +21,7 @@ async function main() {
 
   // 3. Create KeyVaultService
   const keyVaultService = new KeyVaultService({
-    connection: mongoose.connection,
+    vaultStore: new MongoVaultStore(mongoose.connection.getClient().db(mongoose.connection.name)),
     cmkProvider,
     cacheTtl: config.cacheTtl
   });

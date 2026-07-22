@@ -15,57 +15,57 @@ The `ProgrammaticCryptoService` SHALL accept a configuration object with `keyVau
 - **WHEN** `new ProgrammaticCryptoService({})` is called
 - **THEN** the constructor SHALL throw an error with message containing `keyVaultService`
 
-### Requirement: encryptValue encrypts a scalar value
-The system SHALL provide `encryptValue(value, entityName)` that encrypts a scalar value using the active DEK of the named entity's key vault. The result SHALL be a sub-document in canonical LCL format containing `_e: 1`, `_k: kid`, `_a: algorithm`, `_t: typeMarker`, and `c: Buffer`.
+### Requirement: encryptValue encrypts a value by namespace
+The system SHALL provide `encryptValue(value, namespace)` that encrypts a value using the active DEK of the specified canonical namespace. The `namespace` parameter SHALL be a namespace string (e.g., `"User#phone"`) that is parsed and canonicalized internally. The result SHALL be a sub-document containing `_e: 1`, `_t: typeMarker`, and `c: Base64URL string`. The sub-document SHALL NOT contain an `_entity` field.
 
 #### Scenario: Encrypt a string value
-- **WHEN** `encryptValue('13800138000', 'User')` is called
-- **THEN** the result SHALL contain `_e: 1`, `_t: 'STR'`, `_k` matching the active kid, and `c` as a Buffer
+- **WHEN** `encryptValue('13800138000', 'User#phone')` is called
+- **THEN** the system SHALL parse the namespace to `"default.default.User#phone"`
+- **AND** use the active DEK of that namespace's vault
+- **AND** the result SHALL contain `_e: 1`, `_t: 'STR'`, and `c` as a Base64URL string
 
 #### Scenario: Encrypt a number value
-- **WHEN** `encryptValue(42, 'User')` is called
+- **WHEN** `encryptValue(42, 'User#phone')` is called
 - **THEN** the result SHALL contain `_t: 'INT'` and the serialized number
 
 #### Scenario: Encrypt with custom algorithm
-- **WHEN** `encryptValue('secret', 'User', 'SM4_CBC')` is called
+- **WHEN** `encryptValue('secret', 'User#phone', 'SM4_CBC')` is called
 - **THEN** the result SHALL contain `_a: 'SM4_CBC'`
 
-#### Scenario: Encrypt null returns null
-- **WHEN** `encryptValue(null, 'User')` is called
-- **THEN** the system SHALL return `null` without throwing
+#### Scenario: Encrypt null throws
+- **WHEN** `encryptValue(null, 'User#phone')` is called
+- **THEN** the system SHALL throw an error (Java behavior: throws on null)
 
-#### Scenario: Encrypt undefined returns undefined
-- **WHEN** `encryptValue(undefined, 'User')` is called
-- **THEN** the system SHALL return `undefined` without throwing
+#### Scenario: Sub-document does not contain _entity
+- **WHEN** `encryptValue('data', 'User#phone')` is called
+- **THEN** the result sub-document SHALL NOT contain an `_entity` field
 
-#### Scenario: Encrypt with missing entityName throws
-- **WHEN** `encryptValue('data')` is called without entityName
-- **THEN** the system SHALL throw an error with message containing `entityName`
+### Requirement: decryptValue decrypts without entityName parameter
+The system SHALL provide `decryptValue(encryptedSubDocument)` that decrypts a canonical LCL sub-document WITHOUT requiring an `entityName` parameter. It SHALL decode the Wire Format blob (`c` field) to extract the namespace and dekVersion, then resolve the DEK via `getDekByVersion(namespace, dekVersion)`.
 
-### Requirement: decryptValue decrypts a sub-document
-The system SHALL provide `decryptValue(encryptedSubDocument)` that decrypts a canonical LCL sub-document back to a JavaScript value. It SHALL resolve the DEK by `_k` (kid), validate required markers, and return the deserialized plaintext.
+#### Scenario: Decrypt extracts namespace from Wire Format
+- **WHEN** `decryptValue({ _e: 1, _t: 'STR', c: '<base64url-blob>' })` is called
+- **THEN** the system SHALL decode the blob to extract namespace and dekVersion
+- **AND** call `ensureVaultInitialized(namespace)` and `getDekByVersion(namespace, dekVersion)`
+- **AND** return the decrypted plaintext
 
 #### Scenario: Decrypt a string sub-document
-- **WHEN** `decryptValue({ _e: 1, _k: 'v1-abcd1234', _a: 'AES_256_GCM', _t: 'STR', c: <Buffer> })` is called
+- **WHEN** `decryptValue({ _e: 1, _t: 'STR', c: '<Buffer>' })` is called
 - **THEN** the result SHALL be the original plaintext string
 
 #### Scenario: Decrypt with missing _e marker throws
-- **WHEN** `decryptValue({ _k: 'v1-abcd1234', _t: 'STR', c: <Buffer> })` is called
-- **THEN** the system SHALL throw an error with message containing `_e`
+- **WHEN** `decryptValue({ _t: 'STR', c: '...' })` is called
+- **THEN** the system SHALL throw an error about missing `_e`
 
-#### Scenario: Decrypt with missing _k marker throws
-- **WHEN** `decryptValue({ _e: 1, _t: 'STR', c: <Buffer> })` is called
-- **THEN** the system SHALL throw an error with message containing `_k`
+#### Scenario: Decrypt with missing _t marker throws
+- **WHEN** `decryptValue({ _e: 1, c: '...' })` is called
+- **THEN** the system SHALL throw an error about missing `_t`
 
-#### Scenario: Decrypt null returns null
+#### Scenario: Decrypt null throws
 - **WHEN** `decryptValue(null)` is called
-- **THEN** the system SHALL return `null` without throwing
+- **THEN** the system SHALL throw an error
 
-#### Scenario: Decrypt with wrong entity DEK fails
-- **WHEN** a sub-document encrypted under entity 'User' is decrypted using 'Order' DEK
-- **THEN** the system SHALL throw a KCV mismatch error
-
-### Requirement: decryptDocument decrypts all encrypted fields in a raw document
+### Requirement: decryptDocument delegates to per-field decryption
 The system SHALL provide `decryptDocument(rawDocument, entityName, encryptedFields)` that decrypts all specified encrypted fields in a raw MongoDB document. It SHALL mutate the document in-place and return the same reference.
 
 #### Scenario: Decrypt multiple fields in a raw document
@@ -88,7 +88,7 @@ The system SHALL provide `decryptDocument(rawDocument, entityName, encryptedFiel
 The system SHALL produce encrypted sub-documents that are decryptable by the Java `ProgrammaticCryptoService`, and vice versa, for all supported type markers (`STR`, `INT`, `LONG`, `BOOL`, `FLOAT`, `DOUBLE`, `LDATE`, `LDT`, `BYTES`).
 
 #### Scenario: Node.js encrypt, Java decrypt
-- **WHEN** Node.js `encryptValue('hello', 'User')` produces a sub-document
+- **WHEN** Node.js `encryptValue('hello', 'User#phone')` produces a sub-document
 - **THEN** Java `decryptValue(subDocument)` SHALL return `"hello"`
 
 #### Scenario: Java encrypt, Node.js decrypt
@@ -108,42 +108,42 @@ The `ProgrammaticCryptoService` class SHALL be exported from the package's main 
 The `ProgrammaticCryptoService.encryptValue()` method SHALL detect plain objects and arrays, serialize them to BSON binary via `BsonCodec`, and produce `DOC` or `COL` encrypted sub-documents respectively.
 
 #### Scenario: Encrypt a plain object as DOC
-- **WHEN** `encryptValue({ name: "Alice", age: 30 }, 'User')` is called
-- **THEN** the result SHALL contain `_t: "DOC"`, `_entity: "User"`, `_e: 1`, `_k` matching the active kid, and `c` as a Buffer of the encrypted BSON binary
+- **WHEN** `encryptValue({ name: "Alice", age: 30 }, 'User#address')` is called
+- **THEN** the result SHALL contain `_t: "DOC"`, `_e: 1`, `_k` matching the active kid, and `c` as a Buffer of the encrypted BSON binary
 
 #### Scenario: Encrypt an array as COL
-- **WHEN** `encryptValue([1, 2, 3], 'User')` is called
-- **THEN** the result SHALL contain `_t: "COL"`, `_entity: "User"`, `_e: 1`, and `c` as a Buffer of the encrypted BSON binary for `{ _v: [1, 2, 3] }`
+- **WHEN** `encryptValue([1, 2, 3], 'User#tags')` is called
+- **THEN** the result SHALL contain `_t: "COL"`, `_e: 1`, and `c` as a Buffer of the encrypted BSON binary for `{ _v: [1, 2, 3] }`
 
 #### Scenario: Encrypt a nested object as DOC
-- **WHEN** `encryptValue({ address: { city: "Shanghai" }, tags: ["a", "b"] }, 'User')` is called
+- **WHEN** `encryptValue({ address: { city: "Shanghai" }, tags: ["a", "b"] }, 'User#profile')` is called
 - **THEN** the result SHALL contain `_t: "DOC"` and the BSON binary ciphertext SHALL include the nested structure
 
 #### Scenario: Encrypt an empty object
-- **WHEN** `encryptValue({}, 'User')` is called
+- **WHEN** `encryptValue({}, 'User#data')` is called
 - **THEN** the result SHALL contain `_t: "DOC"` and the ciphertext SHALL encrypt the BSON binary of an empty document
 
 #### Scenario: Encrypt an empty array
-- **WHEN** `encryptValue([], 'User')` is called
+- **WHEN** `encryptValue([], 'User#items')` is called
 - **THEN** the result SHALL contain `_t: "COL"` and the ciphertext SHALL encrypt the BSON binary of `{ _v: [] }`
 
 ### Requirement: decryptValue SHALL restore structured values from DOC/COL/MAP sub-documents
 The `ProgrammaticCryptoService.decryptValue()` method SHALL detect `_t: "DOC"`, `_t: "COL"`, or `_t: "MAP"` and use `BsonCodec` to decode the decrypted BSON binary back to a plain object or array.
 
 #### Scenario: Decrypt a DOC sub-document
-- **WHEN** `decryptValue({ _e:1, _k:kid, _a:'AES_256_GCM', _t:'DOC', c:<Buffer>, _entity:'User' })` is called
+- **WHEN** `decryptValue({ _e:1, _k:kid, _a:'AES_256_GCM', _t:'DOC', c:<Buffer> })` is called
 - **THEN** the result SHALL be the original plain object
 
 #### Scenario: Decrypt a COL sub-document
-- **WHEN** `decryptValue({ _e:1, _k:kid, _a:'AES_256_GCM', _t:'COL', c:<Buffer>, _entity:'User' })` is called
+- **WHEN** `decryptValue({ _e:1, _k:kid, _a:'AES_256_GCM', _t:'COL', c:<Buffer> })` is called
 - **THEN** the result SHALL be the original array (unwrapped from `_v`)
 
 #### Scenario: Decrypt a MAP sub-document from Java
-- **WHEN** `decryptValue({ _e:1, _k:kid, _a:'AES_256_GCM', _t:'MAP', c:<Buffer>, _entity:'User' })` is called
+- **WHEN** `decryptValue({ _e:1, _k:kid, _a:'AES_256_GCM', _t:'MAP', c:<Buffer> })` is called
 - **THEN** the result SHALL be the original plain object (map)
 
 #### Scenario: Round-trip object through encryptValue/decryptValue
-- **WHEN** `decryptValue(await encryptValue({ key: "value" }, 'User'), 'User')` is called
+- **WHEN** `decryptValue(await encryptValue({ key: "value" }, 'User#data'))` is called
 - **THEN** the result SHALL be deep-equal to `{ key: "value" }`
 
 ### Requirement: decryptDocument SHALL handle DOC/COL/MAP encrypted fields

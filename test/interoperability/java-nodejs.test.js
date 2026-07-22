@@ -144,10 +144,10 @@ describe('Java Interoperability', () => {
   });
 
   describe('Error handling interoperability', () => {
-    test('missing _k field produces Java-compatible error message', () => {
+    test('invalid ciphertext produces decryption error', () => {
       const subDoc = { _e: 1, _a: 'AES_256_GCM', _t: 'STR', c: Buffer.from('test') };
       expect(() => fieldService.decryptField(subDoc, TEST_DEK, TEST_HMAC_KEY, 'AES_256_GCM'))
-        .toThrow(/missing '_k' \(kid\) field/);
+        .toThrow(/Decryption failed/);
     });
 
     test('unsupported algorithm produces Java-compatible error message', () => {

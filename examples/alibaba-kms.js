@@ -26,7 +26,7 @@
  */
 
 const mongoose = require('mongoose');
-const { AlibabaKmsProvider, KeyVaultService, lclCryptoPlugin, prepareEncryptedSchema } = require('../src');
+const { AlibabaKmsProvider, KeyVaultService, lclCryptoPlugin, prepareEncryptedSchema, MongoVaultStore } = require('../src');
 
 async function main() {
   const keyType = process.env.LCL_ALIBABA_KMS_KEY_TYPE || 'symmetric';
@@ -53,7 +53,7 @@ async function main() {
 
   // 3. Create KeyVaultService with Alibaba provider
   const keyVaultService = new KeyVaultService({
-    connection: mongoose.connection,
+    vaultStore: new MongoVaultStore(mongoose.connection.getClient().db(mongoose.connection.name)),
     cmkProvider: alibabaProvider,
     cacheTtl: 3600000
   });

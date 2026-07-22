@@ -32,7 +32,13 @@ const AlibabaKmsProvider = require('./provider/AlibabaKmsProvider');
 const LclConfig = require('./config/LclConfig');
 const { lclCryptoPlugin, prepareEncryptedSchema } = require('./plugin/lclCryptoPlugin');
 const { rewriteQuery } = require('./plugin/queryRewriter');
-const { getKeyVaultModel } = require('./model/KeyVaultDocument');
+
+// Adapter layer
+const VaultStore = require('./adapter/VaultStore');
+const { validateVaultDocument, createVaultDocument } = require('./adapter/VaultDocument');
+const OptimisticLockError = require('./adapter/OptimisticLockError');
+const MongoVaultStore = require('./adapter/MongoVaultStore');
+const InMemoryVaultStore = require('./adapter/InMemoryVaultStore');
 
 module.exports = {
   // Crypto
@@ -79,6 +85,11 @@ module.exports = {
   prepareEncryptedSchema,
   rewriteQuery,
 
-  // Model
-  getKeyVaultModel
+  // Adapter
+  VaultStore,
+  validateVaultDocument,
+  createVaultDocument,
+  OptimisticLockError,
+  MongoVaultStore,
+  InMemoryVaultStore
 };

@@ -93,9 +93,9 @@ describe('FieldCryptoService', () => {
       expect(service.decryptField(obj, dek, hmacKey, 'AES_256_GCM')).toEqual(obj);
     });
 
-    test('throws FatalCryptoError for missing _k', () => {
+    test('throws DecryptionError for invalid ciphertext', () => {
       const subDoc = { _e: 1, _a: 'AES_256_GCM', _t: 'STR', c: Buffer.from('test') };
-      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(FatalCryptoError);
+      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(DecryptionError);
     });
 
     test('throws DecryptionError for unsupported algorithm', () => {
