@@ -4,6 +4,7 @@ const BootstrapEngine = require('../../../src/bootstrap/BootstrapEngine');
 const BootstrapContext = require('../../../src/bootstrap/BootstrapContext');
 const { PhaseResult } = require('../../../src/bootstrap/BootstrapResult');
 const BootstrapTimeoutError = require('../../../src/bootstrap/BootstrapTimeoutError');
+const EventBus = require('../../../src/event/EventBus');
 
 function mockCheck(result) {
   return { check: async () => result };
@@ -26,6 +27,19 @@ function retryThenSucceed(name, failTimes, ms = 1) {
       return PhaseResult.success(name, ms);
     }
   };
+}
+
+/**
+ * Mock EventBus that collects emitted events for assertion.
+ */
+class CollectingEventBus extends EventBus {
+  constructor() {
+    super();
+    this.events = [];
+  }
+  emit(event) {
+    this.events.push(event);
+  }
 }
 
 describe('BootstrapEngine', () => {
@@ -118,20 +132,25 @@ describe('BootstrapEngine', () => {
     await expect(engine.run(ctx, phases)).rejects.toThrow(BootstrapTimeoutError);
   });
 
-  test('emits events via onEvent', async () => {
-    const events = [];
+  test('emits structured events via EventBus', async () => {
+    const bus = new CollectingEventBus();
     const ctx = new BootstrapContext({
       cmkProvider: { getProviderId: () => 'test' },
-      onEvent: (name, detail) => events.push(name)
+      eventBus: bus
     });
     const phases = [
       { name: 'P1', check: successCheck('P1'), failureClass: 'FATAL' }
     ];
     await engine.run(ctx, phases);
-    expect(events).toContain('lcl.bootstrap.started');
-    expect(events).toContain('lcl.bootstrap.P1.started');
-    expect(events).toContain('lcl.bootstrap.P1.completed');
-    expect(events).toContain('lcl.bootstrap.ready');
+    const eventNames = bus.events.map(e => e.event);
+    expect(eventNames).toContain('lcl.bootstrap.started');
+    expect(eventNames).toContain('lcl.bootstrap.P1.started');
+    expect(eventNames).toContain('lcl.bootstrap.P1.completed');
+    expect(eventNames).toContain('lcl.bootstrap.ready');
+    // Verify structured fields
+    const started = bus.events.find(e => e.event === 'lcl.bootstrap.started');
+    expect(started.result).toBe('started');
+    expect(started.tier).toBe('L2');
   });
 
   test('check throws error → treated as failure', async () => {

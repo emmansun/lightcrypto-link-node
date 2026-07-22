@@ -243,3 +243,69 @@ BootstrapEngine.run(context, phases)
 ### Integration
 
 The engine is integrated into `lclCryptoPlugin` via the `bootstrap` option. When enabled, bootstrap runs before schema registration. A `FAILED` result throws an Error, preventing initialization with corrupted crypto primitives.
+
+## Event System (src/event/)
+
+lightcrypto-link-node provides a structured event infrastructure for observability, aligned with the Java `lcl-core/event/` implementation.
+
+### Module Structure
+
+| Module | Purpose |
+|--------|--------|
+| `EventBus` | Abstract base class defining `emit(event)` contract |
+| `LclEvent` | Immutable structured event model (Builder pattern) |
+| `EventTier` | Event classification constants (L1/L2/L3) |
+| `NoOpEventBus` | Singleton default that discards all events (zero overhead) |
+| `CompositeEventBus` | Multi-cast delegate with failure isolation |
+
+### Event Tier
+
+| Tier | Delivery | Use Case |
+|------|----------|----------|
+| `L1` | Best-effort | Diagnostic (cache eviction, internal state) |
+| `L2` | Reliable | Operational (encrypt/decrypt, key rotation, bootstrap) |
+| `L3` | Guaranteed | Audit (compliance, access logging) |
+
+### LclEvent Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `event` | string | Yes | Event name (`lcl.<subsystem>.<operation>.<status>`, max 96 chars) |
+| `tier` | EventTier | Yes | Classification (L1/L2/L3) |
+| `result` | string | Yes | Outcome (`success`, `failed`, `started`, `degraded`) |
+| `timestamp` | Date | No (default now) | When the event occurred |
+| `durationMicros` | number | No (default -1) | Operation duration in microseconds |
+| `namespace` | string | No | LCL namespace |
+| `algorithm` | string | No | Algorithm identifier |
+| `dekVersion` | number | No (default -1) | DEK version |
+| `errorType` | string | No | Error classification |
+| `attributes` | Map<string,string> | No (default empty) | Additional key-value pairs |
+
+### Security Constraint
+
+LclEvent instances MUST NOT contain IV, Tag, ciphertext, wrapped DEK, CMK material, plaintext values, query values, or personal data.
+
+### Usage
+
+```javascript
+const { EventBus, CompositeEventBus } = require('lightcrypto-link-node');
+
+// Custom EventBus implementation
+class LogEventBus extends EventBus {
+  emit(event) {
+    console.log(`[${event.tier}] ${event.event}: ${event.result}`);
+  }
+}
+
+// Multi-cast to multiple buses
+const bus = new CompositeEventBus([
+  new LogEventBus(),
+  new MetricsEventBus()
+]);
+
+schema.plugin(lclCryptoPlugin, {
+  cmkProvider,
+  vaultStore,
+  bootstrap: { eventBus: bus }
+});
+```

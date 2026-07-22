@@ -370,6 +370,7 @@ function lclCryptoPlugin(schema, options) {
       vaultStore: options.vaultStore || null,
       strictMode: bootstrapOpts.strictMode !== undefined ? bootstrapOpts.strictMode : true,
       bootstrapTimeoutMs: bootstrapOpts.timeoutMs || 15000,
+      eventBus: bootstrapOpts.eventBus || options.eventBus || undefined,
       onEvent: bootstrapOpts.onEvent || (() => {})
     });
 

@@ -4,6 +4,8 @@ const { BootstrapEngine } = require('../../../src/bootstrap');
 const BootstrapContext = require('../../../src/bootstrap/BootstrapContext');
 const { PhaseResult } = require('../../../src/bootstrap/BootstrapResult');
 const { createDefaultPhases } = require('../../../src/bootstrap');
+const NoOpEventBus = require('../../../src/event/NoOpEventBus');
+const EventBus = require('../../../src/event/EventBus');
 
 describe('Bootstrap plugin integration', () => {
   test('bootstrap with passing checks → READY', async () => {
@@ -56,6 +58,7 @@ describe('Bootstrap plugin integration', () => {
     expect(ctx.bootstrapTimeoutMs).toBe(15000);
     expect(ctx.vaultStore).toBeNull();
     expect(typeof ctx.onEvent).toBe('function');
+    expect(ctx.eventBus).toBe(NoOpEventBus.INSTANCE);
   });
 
   test('BootstrapContext custom config', () => {
@@ -78,5 +81,34 @@ describe('Bootstrap plugin integration', () => {
   test('BootstrapContext is frozen', () => {
     const ctx = new BootstrapContext({ cmkProvider: { getProviderId: () => 'test' } });
     expect(Object.isFrozen(ctx)).toBe(true);
+  });
+
+  test('BootstrapContext with eventBus option', () => {
+    class TestBus extends EventBus {
+      constructor() { super(); this.events = []; }
+      emit(e) { this.events.push(e); }
+    }
+    const bus = new TestBus();
+    const ctx = new BootstrapContext({
+      cmkProvider: { getProviderId: () => 'test' },
+      eventBus: bus
+    });
+    expect(ctx.eventBus).toBe(bus);
+  });
+
+  test('BootstrapContext onEvent wraps as CallbackEventBus', async () => {
+    const events = [];
+    const ctx = new BootstrapContext({
+      cmkProvider: { getProviderId: () => 'test' },
+      onEvent: (name, _detail) => events.push(name)
+    });
+    // eventBus should be a wrapper, not NoOp
+    expect(ctx.eventBus).not.toBe(NoOpEventBus.INSTANCE);
+    // Emit through eventBus and verify callback is invoked
+    const LclEvent = require('../../../src/event/LclEvent');
+    const EventTier = require('../../../src/event/EventTier');
+    const event = LclEvent.builder().event('lcl.test').tier(EventTier.L1).result('ok').build();
+    ctx.eventBus.emit(event);
+    expect(events).toContain('lcl.test');
   });
 });

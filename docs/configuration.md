@@ -213,7 +213,8 @@ schema.plugin(lclCryptoPlugin, {
     strictMode: false,      // tolerant mode: RECOVERABLE failures → DEGRADED instead of FAILED
     timeoutMs: 10000,       // total bootstrap timeout (default: 15000ms)
     phases: customPhases,   // override default phases
-    onEvent: (name, detail) => console.log(name, detail)  // event callback
+    onEvent: (name, detail) => console.log(name, detail),  // @deprecated event callback
+    eventBus: myEventBus    // structured EventBus instance (preferred over onEvent)
   }
 });
 ```
@@ -240,3 +241,33 @@ schema.plugin(lclCryptoPlugin, {
 - `DEGRADED` — A RECOVERABLE check failed in tolerant mode (functionality may be limited)
 
 > **Note:** Bootstrap is disabled by default (`bootstrap: false`). Enable it in production for fail-fast behavior.
+
+### EventBus Configuration
+
+The `eventBus` option provides structured event notification for bootstrap phases. It takes precedence over the deprecated `onEvent` callback.
+
+```javascript
+const { EventBus, CompositeEventBus, EventTier } = require('lightcrypto-link-node');
+
+// Custom EventBus
+class AuditEventBus extends EventBus {
+  emit(event) {
+    if (event.tier === EventTier.L3) {
+      auditLog.write(event);
+    }
+  }
+}
+
+schema.plugin(lclCryptoPlugin, {
+  cmkProvider,
+  vaultStore,
+  bootstrap: {
+    eventBus: new CompositeEventBus([
+      new AuditEventBus(),
+      new MetricsEventBus()
+    ])
+  }
+});
+```
+
+When neither `eventBus` nor `onEvent` is provided, the system uses `NoOpEventBus` (zero overhead).

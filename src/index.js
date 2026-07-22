@@ -47,6 +47,15 @@ const {
   createDefaultPhases
 } = require('./bootstrap');
 
+// Event
+const {
+  EventBus,
+  LclEvent,
+  EventTier,
+  NoOpEventBus,
+  CompositeEventBus
+} = require('./event');
+
 // SPI layer
 const StorageAdapter = require('./spi/StorageAdapter');
 const DocumentAccessor = require('./spi/DocumentAccessor');
@@ -139,5 +148,12 @@ module.exports = {
   ConfigValidationCheck,
   KmsReachabilityCheck,
   VaultReachabilityCheck,
-  createDefaultPhases
+  createDefaultPhases,
+
+  // Event
+  EventBus,
+  LclEvent,
+  EventTier,
+  NoOpEventBus,
+  CompositeEventBus
 };

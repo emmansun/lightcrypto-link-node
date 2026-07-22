@@ -2,6 +2,8 @@
 
 const { BootstrapResult } = require('./BootstrapResult');
 const BootstrapTimeoutError = require('./BootstrapTimeoutError');
+const LclEvent = require('../event/LclEvent');
+const EventTier = require('../event/EventTier');
 
 const MAX_RETRIES = 3;
 const BACKOFF_MS = [100, 200, 400];
@@ -22,18 +24,18 @@ class BootstrapEngine {
     const phaseResults = [];
     let degraded = false;
 
-    context.onEvent('lcl.bootstrap.started', { phaseCount: phases.length });
+    this._emit(context, 'lcl.bootstrap.started', 'started');
 
     for (const phase of phases) {
       const elapsed = Date.now() - startTime;
       if (elapsed >= context.bootstrapTimeoutMs) {
-        context.onEvent('lcl.bootstrap.timeout', { phase: phase.name, elapsedMs: elapsed });
+        this._emit(context, 'lcl.bootstrap.timeout', 'failed', { durationMicros: elapsed * 1000 });
         throw new BootstrapTimeoutError(phase.name, context.bootstrapTimeoutMs);
       }
 
       const phaseName = phase.name;
       const failureClass = phase.failureClass || 'FATAL';
-      context.onEvent(`lcl.bootstrap.${phaseName}.started`, { failureClass });
+      this._emit(context, `lcl.bootstrap.${phaseName}.started`, 'started');
 
       const phaseStart = Date.now();
       let result = await this._executeCheck(phase, context);
@@ -41,14 +43,14 @@ class BootstrapEngine {
 
       if (result.success) {
         phaseResults.push(result);
-        context.onEvent(`lcl.bootstrap.${phaseName}.completed`, { durationMs });
+        this._emit(context, `lcl.bootstrap.${phaseName}.completed`, 'success', { durationMicros: durationMs * 1000 });
         continue;
       }
 
       // Phase failed — handle by failure class
       if (failureClass === 'FATAL') {
         phaseResults.push(result);
-        context.onEvent(`lcl.bootstrap.${phaseName}.failed`, { error: result.error, durationMs });
+        this._emit(context, `lcl.bootstrap.${phaseName}.failed`, 'failed', { durationMicros: durationMs * 1000, errorType: result.error });
         const totalDuration = Date.now() - startTime;
         return BootstrapResult.failed(phaseResults, totalDuration, phaseName, result.error);
       }
@@ -59,14 +61,14 @@ class BootstrapEngine {
 
         if (result.success) {
           phaseResults.push(result);
-          context.onEvent(`lcl.bootstrap.${phaseName}.completed`, { durationMs, retried: true });
+          this._emit(context, `lcl.bootstrap.${phaseName}.completed`, 'success', { durationMicros: durationMs * 1000 });
           continue;
         }
 
         // Retries exhausted
         if (context.strictMode) {
           phaseResults.push(result);
-          context.onEvent(`lcl.bootstrap.${phaseName}.failed`, { error: result.error, durationMs });
+          this._emit(context, `lcl.bootstrap.${phaseName}.failed`, 'failed', { durationMicros: durationMs * 1000, errorType: result.error });
           const totalDuration = Date.now() - startTime;
           return BootstrapResult.failed(phaseResults, totalDuration, phaseName, result.error);
         }
@@ -74,24 +76,48 @@ class BootstrapEngine {
         // Tolerant mode: mark degraded, continue
         phaseResults.push(result);
         degraded = true;
-        context.onEvent(`lcl.bootstrap.${phaseName}.degraded`, { error: result.error, durationMs });
+        this._emit(context, `lcl.bootstrap.${phaseName}.degraded`, 'degraded', { durationMicros: durationMs * 1000, errorType: result.error });
         continue;
       }
 
       if (failureClass === 'ADVISORY') {
         phaseResults.push(result);
-        context.onEvent(`lcl.bootstrap.${phaseName}.failed`, { error: result.error, advisory: true, durationMs });
+        this._emit(context, `lcl.bootstrap.${phaseName}.failed`, 'failed', { durationMicros: durationMs * 1000, errorType: result.error });
         continue;
       }
     }
 
     const totalDuration = Date.now() - startTime;
-    context.onEvent('lcl.bootstrap.ready', { durationMs: totalDuration, degraded });
+    this._emit(context, 'lcl.bootstrap.ready', degraded ? 'degraded' : 'success', { durationMicros: totalDuration * 1000 });
 
     if (degraded) {
       return BootstrapResult.degraded(phaseResults, totalDuration);
     }
     return BootstrapResult.ready(phaseResults, totalDuration);
+  }
+
+  /**
+   * Construct and emit a structured LclEvent via context.eventBus.
+   * @private
+   */
+  _emit(context, eventName, result, opts = {}) {
+    const builder = LclEvent.builder()
+      .event(eventName)
+      .tier(EventTier.L2)
+      .result(result);
+
+    if (opts.durationMicros !== undefined) {
+      builder.durationMicros(opts.durationMicros);
+    }
+    if (opts.errorType !== undefined) {
+      builder.errorType(opts.errorType);
+    }
+
+    try {
+      context.eventBus.emit(builder.build());
+    } catch (_err) {
+      // EventBus contract: never propagate to caller
+    }
   }
 
   /**
