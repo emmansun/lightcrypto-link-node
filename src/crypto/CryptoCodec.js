@@ -67,7 +67,7 @@ class CryptoCodec {
 
   /**
    * Decrypt a Wire Format V1 blob.
-   * @param {Buffer|string} dek - Data encryption key
+   * @param {Buffer|string} dek - Data encryption key (Buffer or hex string)
    * @param {string|Buffer} data - Base64URL string or Buffer (legacy)
    * @param {string} [algorithm] - Default algorithm (overridden by Wire Format header)
    * @returns {Buffer} Decrypted plaintext

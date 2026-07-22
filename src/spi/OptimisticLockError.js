@@ -7,7 +7,7 @@
  */
 class OptimisticLockError extends Error {
   /**
-   * @param {string} namespace - The vault namespace (e.g., 'lcl-dek-User')
+   * @param {string} namespace - The vault namespace (e.g., 'default.default.User#phone')
    * @param {number} expected - The expected stored version (doc.v - 1)
    * @param {number} actual - The actual stored version
    */

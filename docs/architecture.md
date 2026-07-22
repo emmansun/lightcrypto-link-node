@@ -2,7 +2,7 @@
 
 ## SPI Layer (src/spi/)
 
-lightcrypto-link-node defines 4 abstract SPI (Service Provider Interface) base classes for pluggable data storage:
+lightcrypto-link-node defines 5 abstract SPI (Service Provider Interface) base classes plus supporting types:
 
 | SPI Interface | Purpose | Default Implementation |
 |---------------|---------|----------------------|
@@ -10,6 +10,9 @@ lightcrypto-link-node defines 4 abstract SPI (Service Provider Interface) base c
 | `DocumentAccessor` | Field-level document access | `MongooseDocumentAccessor` |
 | `StructuredValueCodec` | Structured value serialization (DOC/COL/MAP) | `BsonStructuredValueCodec` |
 | `QueryTransformer` | Blind-index query rewriting | `MongooseQueryTransformer` |
+| `VaultStore` | Vault document persistence (save/load/rotate) | `MongoVaultStore` |
+
+Supporting types: `VaultDocument` (validated vault document model), `OptimisticLockError` (concurrent rotation conflict error).
 
 ### StorageAdapter
 

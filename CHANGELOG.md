@@ -7,53 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- NPM version badge in README
-
-### Changed
-- **TypeSerializer**: `serialize()` now uses `TextEncoder.encode()` instead of `Buffer.from(string, 'utf8')` for better performance (returns `Uint8Array`)
-- **ESLint**: Added `TextEncoder`/`TextDecoder` to source and test globals
-- **CMK providers**: Aligned algorithm identifiers using `LclAlgorithms` constants:
-  - `LocalCmkProvider`: returns `AES-256-GCM` (was lowercase `aes-256-gcm`)
-  - `AzureKmsProvider`: unified to `RSA-OAEP-256` (SHA-256 only, removed SHA-1 support)
-  - `AlibabaKmsProvider`: simplified asymmetric wrap to local-only mode
-- **docs/cmk-provider.md**: Full rewrite with provider details, auto-resolution behavior, config examples
-
-### Fixed
-- **Tests**: Removed obsolete tests (unsupported algorithm validation, RSA-OAEP SHA-1, remote wrap mode); fixed `AES-256-GCM` case mismatch
-
----
-
-## [1.1.0-beta.1] - 2026-07-14
+## [1.1.0] - 2026-07-22
 
 ### Added
-- **Structured type encryption** — BSON binary serialization for complex values (matching Java LightCrypto-Link):
-  - `DOC`: whole-object encryption via `BsonCodec.encodeDocument()`
-  - `COL`: whole-array encryption via `BsonCodec.encodeCollection()` (wraps as `{ _v: [...] }`)
-  - `MAP`: decryption of Java-encrypted map values
-  - Element-level array encryption (each element encrypted independently)
-- **Nested path encryption** — encrypt specific fields inside sub-documents or array elements:
-  - Sub-document: `address.street` encrypted, `address.city` visible
-  - Array elements: `items[].price` encrypted per-element (Java `LIST_ITER` + `FIELD`)
-- **Encryption mode control** — `AUTO` (default), `ELEMENT`, `WHOLE` with field-type-specific behavior
-- **Query validation** — throws when querying an encrypted field without `blindIndex: true` (matches Java's `UnsupportedOperationException`)
-- **Plaintext backfill runner** — `examples/plaintext-backfill.js` for migrating legacy plaintext data:
-  - Dry-run mode to estimate candidate volume
-  - Batch size control and cursor-based resume
-  - Progress reporting per batch
-- **ProgrammaticCryptoService** extended for structured values:
-  - `encryptValue()` detects objects/arrays → DOC/COL sub-documents
-  - `decryptValue()` handles DOC/COL/MAP type markers
-  - `decryptDocument()` supports structured encrypted fields
-
-### Fixed
-- **BYTES serialization** — now encrypts raw bytes directly (matching Java `serialize(byte[])`), instead of base64-encoded UTF-8
-- **SM4-CBC key adaptation** — 32-byte DEK now uses `DEK[0:16]` (matching Java), instead of `SHA-256(DEK)[0:16]`
-- **AES-GCM KCV** — now returns 32 bytes (16 ciphertext + 16 auth tag = 64 hex chars), matching Java
+- **SPI Layer (src/spi/)** — Pluggable storage abstraction aligned with Java `lcl-spi`:
+  - `VaultStore`: vault document persistence (save/load/rotate/exists/loadAll) with `MongoVaultStore` (native mongodb driver) and `InMemoryVaultStore`
+  - `StorageAdapter`: encrypted payload format (build/extract) with `MongooseStorageAdapter`
+  - `DocumentAccessor`: field-level document access with `MongooseDocumentAccessor`
+  - `StructuredValueCodec`: structured value serialization (DOC/COL/MAP) with `BsonStructuredValueCodec`
+  - `QueryTransformer`: blind-index query rewriting with `MongooseQueryTransformer`
+  - `VaultDocument`: validated vault document model
+  - `OptimisticLockError`: concurrent rotation conflict error
+- **Bootstrap Self-Check Engine (src/bootstrap/)** — Fail-fast startup verification:
+  - `BootstrapEngine`: sequential phase executor with FATAL/RECOVERABLE/ADVISORY failure classification, timeout enforcement, exponential backoff retry
+  - `KatRunner`: Known Answer Test using golden vectors (AES-256-GCM/CBC, SM4-CBC, HMAC-SHA256, KCV)
+  - `ConfigValidationCheck`: validates cmkProvider configuration
+  - `KmsReachabilityCheck`: probes KMS via getPublicReference()
+  - `VaultReachabilityCheck`: probes VaultStore via exists()
+- **Structured Event Bus (src/event/)** — Observability infrastructure:
+  - `EventBus`: abstract base class with `emit(event)` contract
+  - `LclEvent`: immutable structured event model (Builder pattern)
+  - `EventTier`: L1 (Diagnostic) / L2 (Operational) / L3 (Audit) classification
+  - `CompositeEventBus`: multi-cast delegate with failure isolation
+  - `NoOpEventBus`: singleton zero-overhead default
+- **Wire Format V1** — Cross-language binary compatibility with Java LightCrypto-Link:
+  - `WireFormatEncoder`/`WireFormatDecoder`: binary blob construction/parsing
+  - `AlgorithmId`: algorithm registry with wire format byte mapping
+  - Namespace model: `tenant.realm.entity#field` embedded in wire format
+- **Blind Index Engine** — HKDF-SHA256 namespace-scoped key derivation + HMAC-SHA-256
+- **ProgrammaticCryptoService** — Manual encrypt/decrypt outside Mongoose
+- **Plaintext backfill runner** — `examples/plaintext-backfill.js` for migrating legacy data
 
 ### Changed
-- README: softened "100% interoperability" to "BSON format compatible"
-- Type serialization: `byte[]` documented as raw bytes (was "Base64")
+- **TypeSerializer**: `serialize()` now uses `TextEncoder.encode()` for better performance
+- **CMK providers**: Aligned algorithm identifiers using `LclAlgorithms` constants
+- **SM4-CBC key adaptation**: 32-byte DEK now uses `DEK[0:16]` (matching Java)
+- **AES-GCM KCV**: now returns 32 bytes (matching Java)
+- **BYTES serialization**: encrypts raw bytes directly (matching Java)
+
+### Fixed
+- **Structured type encryption**: BSON binary serialization for complex values (DOC/COL/MAP)
+- **Nested path encryption**: encrypt specific fields inside sub-documents or array elements
+- **Query validation**: throws when querying encrypted field without `blindIndex: true`
 
 ---
 

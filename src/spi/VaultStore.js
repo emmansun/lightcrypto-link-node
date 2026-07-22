@@ -18,7 +18,7 @@ class VaultStore {
 
   /**
    * Load a VaultDocument by namespace.
-   * @param {string} namespace - Canonical namespace string (e.g., 'lcl-dek-User')
+   * @param {string} namespace - Canonical namespace string (e.g., 'default.default.User#phone')
    * @returns {Promise<Object|null>} VaultDocument or null if not found
    */
   async load(namespace) {

@@ -26,7 +26,7 @@ class DecryptionError extends Error {
  * FieldCryptoService - Encrypts/decrypts individual field values.
  * Builds and parses the encrypted sub-document format compatible with Java LightCrypto-Link.
  *
- * Sub-document format: { _e: 1, _k: kid, _a: algorithm, _t: typeMarker, c: Base64URL string, b?: blindIndex }
+ * Sub-document format: { c: Base64URL string, _e: 1, _t: typeMarker, _k: kid, _a: algorithm, b?: blindIndex }
  */
 class FieldCryptoService {
   /**

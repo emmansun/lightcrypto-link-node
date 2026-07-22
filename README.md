@@ -1,9 +1,9 @@
 # lightcrypto-link-node
 
-Lightweight application-level field encryption (ALFE) for Node.js/Mongoose and MongoDB.
+Application-level field encryption SDK for Node.js with pluggable storage adapters and multi-KMS support.
 
-Transparent encrypt/decrypt on write/read, HKDF-based blind index for exact-match queries,
-multi-DEK envelope encryption with key rotation, multi-KMS/SM-crypto support,
+Transparent encrypt/decrypt via Mongoose plugin or programmatic API, HKDF-based blind index for exact-match queries,
+multi-DEK envelope encryption with key rotation, bootstrap self-check engine, structured event bus,
 and **byte-level Wire Format V1 compatibility** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
 
 [![codecov](https://codecov.io/github/emmansun/lightcrypto-link-node/graph/badge.svg?token=nQ733ApHBI)](https://codecov.io/github/emmansun/lightcrypto-link-node)
@@ -39,7 +39,9 @@ Deep docs are in [docs](docs/):
 - Encryption mode control: `AUTO` (default), `ELEMENT`, `WHOLE`
 - Per-entity DEK versioning and rotation
 - Pluggable CMK providers: Local, Azure Key Vault, Alibaba Cloud KMS
-- Pluggable data storage adapters: SPI layer (`StorageAdapter`, `DocumentAccessor`, `StructuredValueCodec`, `QueryTransformer`) with Mongoose/BSON defaults
+- Pluggable storage adapters: VaultStore SPI (`MongoVaultStore`, `InMemoryVaultStore`) + Data Storage SPI (`StorageAdapter`, `DocumentAccessor`, `StructuredValueCodec`, `QueryTransformer`) with Mongoose/BSON defaults
+- Bootstrap self-check engine: KAT vector verification, KMS/Vault reachability checks at startup
+- Structured event bus: L1/L2/L3 tiered events with composite multi-cast and failure isolation
 - Zero third-party crypto dependencies (native Node.js `crypto`)
 - **Wire Format V1** cross-language binary compatibility with Java LightCrypto-Link (verified by golden vector test suite)
 - BSON format compatible with Java LightCrypto-Link (DOC, COL, MAP type markers)
@@ -77,10 +79,10 @@ See [docs/configuration.md](docs/configuration.md) for Azure Key Vault, Alibaba 
 
 ```javascript
 const mongoose = require('mongoose');
-const { lclCryptoPlugin, KeyVaultService, prepareEncryptedSchema } = require('lightcrypto-link-node');
+const { lclCryptoPlugin, KeyVaultService, MongoVaultStore, prepareEncryptedSchema } = require('lightcrypto-link-node');
 
 const keyVaultService = new KeyVaultService({
-  connection: mongoose.connection,
+  vaultStore: new MongoVaultStore(mongoose.connection.getClient().db(mongoose.connection.name)),
   cmkProvider,
   cacheTtl: 3600000  // 1 hour
 });
@@ -199,13 +201,21 @@ For behavior details, see [docs/architecture.md](docs/architecture.md).
 Use `ProgrammaticCryptoService` for manual encryption/decryption outside Mongoose — raw driver queries, aggregation pipelines, migration scripts, and DTO encryption:
 
 ```javascript
-const { ProgrammaticCryptoService, KeyVaultService, LocalCmkProvider } = require('lightcrypto-link-node');
+const { ProgrammaticCryptoService, KeyVaultService, LocalCmkProvider, MongoVaultStore, MongooseStorageAdapter, BsonStructuredValueCodec } = require('lightcrypto-link-node');
 
-const keyVaultService = new KeyVaultService({ connection, cmkProvider });
-const programmatic = new ProgrammaticCryptoService({ keyVaultService, algorithm: 'AES_256_GCM' });
+const keyVaultService = new KeyVaultService({
+  vaultStore: new MongoVaultStore(db),
+  cmkProvider
+});
+const programmatic = new ProgrammaticCryptoService({
+  keyVaultService,
+  storageAdapter: new MongooseStorageAdapter(),
+  structuredValueCodec: new BsonStructuredValueCodec(),
+  algorithm: 'AES_256_GCM'
+});
 
 // Encrypt a scalar value
-const subDoc = await programmatic.encryptValue('13800138000', 'User');
+const subDoc = await programmatic.encryptValue('13800138000', 'User#phone');
 // → { _e: 1, _k: 'v1-abcd1234', _a: 'AES_256_GCM', _t: 'STR', c: '<Base64URL string>' }
 
 // Decrypt a sub-document
@@ -221,8 +231,11 @@ await programmatic.decryptDocument(rawDoc, 'User', ['phone', 'ssn']);
 For low-level field operations (without key vault integration), use `FieldCryptoService`:
 
 ```javascript
-const { FieldCryptoService } = require('lightcrypto-link-node');
-const fieldService = new FieldCryptoService();
+const { FieldCryptoService, MongooseStorageAdapter, BsonStructuredValueCodec } = require('lightcrypto-link-node');
+const fieldService = new FieldCryptoService({
+  storageAdapter: new MongooseStorageAdapter(),
+  structuredValueCodec: new BsonStructuredValueCodec()
+});
 
 const encrypted = fieldService.encryptField(value, fieldName, dek, hmacKey, kid, algorithm, { namespace, dekVersion });
 // → { _e: 1, _k: kid, _a: algorithm, _t: 'STR', c: '<Base64URL string>' }
@@ -249,14 +262,17 @@ node examples/alibaba-kms.js         # Alibaba Cloud KMS
 ```text
 lightcrypto-link-node/
 ├── src/
-│   ├── crypto/          # Encryptor implementations (AES-GCM, AES-CBC, SM4-CBC, BsonCodec)
+│   ├── spi/             # SPI interfaces (VaultStore, StorageAdapter, DocumentAccessor, QueryTransformer, StructuredValueCodec, VaultDocument, OptimisticLockError)
+│   ├── adapter/         # Default implementations (MongoVaultStore, InMemoryVaultStore, MongooseStorageAdapter, MongooseDocumentAccessor, BsonStructuredValueCodec, MongooseQueryTransformer)
+│   ├── crypto/          # Encryptor implementations (AES-GCM, AES-CBC, SM4-CBC, CryptoCodec)
 │   ├── format/          # Wire Format V1 (AlgorithmId, WireFormatEncoder, WireFormatDecoder)
 │   ├── namespace/       # Namespace model (tenant.realm.entity#field)
 │   ├── blindindex/      # HKDF-SHA256 blind index engine
-│   ├── service/         # KeyVaultService, FieldCryptoService, TypeSerializer
+│   ├── service/         # KeyVaultService, FieldCryptoService, ProgrammaticCryptoService, TypeSerializer/Deserializer
 │   ├── provider/        # CMK providers (Local, Azure, Alibaba)
 │   ├── plugin/          # Mongoose plugin and query rewriter
-│   ├── model/           # KeyVaultDocument schema
+│   ├── bootstrap/       # Bootstrap engine, KAT runner, startup checks
+│   ├── event/           # Structured event bus (EventBus, LclEvent, EventTier, CompositeEventBus)
 │   ├── config/          # LclConfig (multi-source loader)
 │   └── index.js         # Public API exports
 ├── test/
