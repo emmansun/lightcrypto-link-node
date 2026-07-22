@@ -18,6 +18,8 @@ lightcrypto-link-node supports multi-source configuration with a strict preceden
 | `LCL_ALGORITHM` | Encryption algorithm | `AES_256_GCM` |
 | `LCL_CACHE_TTL` | DEK cache TTL (ms) | `3600000` (1 hour) |
 | `LCL_CMK_PROVIDER` | CMK provider type | `local-symmetric` |
+| `LCL_TENANT` | Tenant identifier for namespace construction | `default` |
+| `LCL_REALM` | Realm identifier for namespace construction | `default` |
 
 ## Secret Managers
 
@@ -51,7 +53,9 @@ Set `LCL_VAULT_ADDR` + `LCL_VAULT_TOKEN`. Optionally set `LCL_VAULT_PATH` (defau
   "lcl": {
     "crypto": { "cmk": "64 hex chars", "algorithm": "AES_256_GCM" },
     "mongodb": { "uri": "mongodb://localhost:27017/mydb" },
-    "cmk": { "provider": "local-symmetric" }
+    "cmk": { "provider": "local-symmetric" },
+    "tenant": "my-tenant",
+    "realm": "my-realm"
   }
 }
 ```
@@ -137,10 +141,45 @@ npm install @alicloud/kms20160120 @alicloud/openapi-client
 The `mode` option controls how structured fields (sub-documents and arrays) are encrypted.
 
 | Mode | Sub-document (DOC) | Scalar Array `[String]` | Sub-doc Array `[Schema]` |
-|------|-------------------|------------------------|--------------------------|
+|------|-------------------|------------------------|---------------------------|
 | `AUTO` (default) | Whole-object | Element-level | Whole-array (COL) |
 | `ELEMENT` | Error | Element-level | Error |
 | `WHOLE` | Whole-object | Whole-array (COL) | Whole-array (COL) |
+
+## Namespace Construction
+
+Each encrypted field gets a unique namespace in the format `<tenant>.<realm>.<entity>#<field>`. The `tenant` and `realm` segments can be configured globally or per-plugin:
+
+### Global Configuration (LclConfig)
+
+```javascript
+// Environment variables
+LCL_TENANT=my-tenant
+LCL_REALM=my-realm
+
+// Or in config/lcl.json
+{ "lcl": { "tenant": "my-tenant", "realm": "my-realm" } }
+```
+
+### Per-Plugin Configuration
+
+```javascript
+schema.plugin(lclCryptoPlugin, {
+  keyVaultService,
+  entityName: 'User',
+  tenant: 'acme-corp',    // Override global tenant
+  realm: 'production'     // Override global realm
+});
+```
+
+### Namespace Resolution
+
+| Input | Resolved Namespace |
+|-------|-------------------|
+| `User#phone` (shorthand) | `{tenant}.{realm}.User#phone` |
+| `acme.prod.User#phone` (full) | `acme.prod.User#phone` (explicit wins) |
+
+> **Note:** Explicit full-form namespaces always take precedence over configured defaults. This allows multi-tenant applications to use different namespaces per request.
 
 ## SPI Adapter Options
 

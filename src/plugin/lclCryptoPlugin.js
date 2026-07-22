@@ -354,6 +354,8 @@ function prepareEncryptedSchema(definition) {
  * @param {KeyVaultService} options.keyVaultService - Key vault service instance
  * @param {string} [options.entityName] - Entity name (defaults to model name)
  * @param {string} [options.algorithm='AES_256_GCM'] - Default encryption algorithm
+ * @param {string} [options.tenant='default'] - Tenant identifier for namespace construction
+ * @param {string} [options.realm='default'] - Realm identifier for namespace construction
  */
 function lclCryptoPlugin(schema, options) {
   // Bootstrap self-check before schema registration
@@ -433,6 +435,8 @@ function lclCryptoPlugin(schema, options) {
   }
   const entityName = options.entityName;
   const algorithm = options.algorithm || 'AES_256_GCM';
+  const tenant = options.tenant || 'default';
+  const realm = options.realm || 'default';
 
   // SPI implementations — accept overrides or use Mongoose/BSON defaults
   const storageAdapter = options.storageAdapter || new MongooseStorageAdapter();
@@ -450,7 +454,9 @@ function lclCryptoPlugin(schema, options) {
     codec,
     keyVaultService,
     serializer,
-    entityName
+    entityName,
+    tenant,
+    realm
   });
 
   // Collect encrypted fields from schema
@@ -570,7 +576,7 @@ function lclCryptoPlugin(schema, options) {
 
     for (const [pathName, fieldConfig] of encryptedFields) {
       // Construct per-field canonical namespace and ensure vault is initialized
-      const fieldNamespace = Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`);
+      const fieldNamespace = Namespace.parseWithDefaults(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`, tenant, realm);
       const canonicalNs = fieldNamespace.canonical();
       await keyVaultService.ensureVaultInitialized(canonicalNs);
       const activeKid = await keyVaultService.getActiveKid(canonicalNs);

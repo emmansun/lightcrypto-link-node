@@ -14,13 +14,17 @@ class MongooseQueryTransformer extends QueryTransformer {
    * @param {import('../service/KeyVaultService')} deps.keyVaultService - Key vault service
    * @param {import('../service/TypeSerializer')} deps.serializer - Type serializer
    * @param {string} [deps.entityName] - Entity name for namespace construction
+   * @param {string} [deps.tenant='default'] - Tenant identifier for namespace construction
+   * @param {string} [deps.realm='default'] - Realm identifier for namespace construction
    */
-  constructor({ codec, keyVaultService, serializer, entityName } = {}) {
+  constructor({ codec, keyVaultService, serializer, entityName, tenant = 'default', realm = 'default' } = {}) {
     super();
     this._codec = codec;
     this._keyVaultService = keyVaultService;
     this._serializer = serializer;
     this._entityName = entityName;
+    this._tenant = tenant;
+    this._realm = realm;
   }
 
   /**
@@ -41,7 +45,7 @@ class MongooseQueryTransformer extends QueryTransformer {
    * @returns {Promise<string>} Base64URL blind index hash
    */
   async rewriteQueryValue(plaintextValue, namespace, options = {}) {
-    const ns = Namespace.parse(namespace);
+    const ns = Namespace.parseWithDefaults(namespace, this._tenant, this._realm);
     const canonicalNs = ns.canonical();
     await this._keyVaultService.ensureVaultInitialized(canonicalNs);
     const hmacKey = await this._keyVaultService.getActiveHmacKey(canonicalNs);
@@ -87,7 +91,7 @@ class MongooseQueryTransformer extends QueryTransformer {
       const effectiveFieldName = fieldConfig.customFieldName || fieldName;
       const value = rewritten[fieldName];
 
-      const ns = Namespace.parse(`${this._entityName}#${effectiveFieldName}`);
+      const ns = Namespace.parseWithDefaults(`${this._entityName}#${effectiveFieldName}`, this._tenant, this._realm);
       const canonicalNs = ns.canonical();
 
       await this._keyVaultService.ensureVaultInitialized(canonicalNs);

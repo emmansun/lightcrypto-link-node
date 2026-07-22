@@ -32,6 +32,20 @@ class Namespace {
    * @returns {Namespace}
    */
   static parse(raw) {
+    return Namespace.parseWithDefaults(raw, 'default', 'default');
+  }
+
+  /**
+   * Parse a raw namespace string with custom default tenant/realm.
+   * Supports:
+   *  - Full form: "tenant.realm.entity#field"
+   *  - Shorthand: "entity#field" → {defaultTenant}.{defaultRealm}.entity#field
+   * @param {string} raw
+   * @param {string} [defaultTenant='default'] - Default tenant for shorthand notation
+   * @param {string} [defaultRealm='default'] - Default realm for shorthand notation
+   * @returns {Namespace}
+   */
+  static parseWithDefaults(raw, defaultTenant = 'default', defaultRealm = 'default') {
     if (typeof raw !== 'string' || raw.length === 0) {
       throw new Error('Namespace must be a non-empty string');
     }
@@ -47,8 +61,8 @@ class Namespace {
     const dotParts = beforeHash.split('.');
 
     if (dotParts.length === 1) {
-      // Shorthand: "Entity#field"
-      return new Namespace('default', 'default', dotParts[0], field);
+      // Shorthand: "Entity#field" → use configured defaults
+      return new Namespace(defaultTenant, defaultRealm, dotParts[0], field);
     } else if (dotParts.length === 2) {
       // Ambiguous: "realm.entity#field"
       throw new Error(`Ambiguous namespace: "${raw}" — use either "Entity#field" or "tenant.realm.Entity#field"`);

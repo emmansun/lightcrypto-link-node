@@ -10,7 +10,9 @@ const DEFAULTS = {
   algorithm: 'AES_256_GCM',
   cacheTtl: 3600000, // 1 hour in ms
   keyVaultCollection: '__lcl_keyvault',
-  cmkProvider: 'local-symmetric'
+  cmkProvider: 'local-symmetric',
+  tenant: 'default',
+  realm: 'default'
 };
 
 /**
@@ -95,6 +97,12 @@ class LclConfig {
 
   /** Get the CMK provider type. */
   get cmkProvider() { return this._config.cmkProvider; }
+
+  /** Get the tenant identifier for namespace construction. */
+  get tenant() { return this._config.tenant; }
+
+  /** Get the realm identifier for namespace construction. */
+  get realm() { return this._config.realm; }
 
   /** Get Azure Key Vault URL. */
   get azureKeyUrl() { return this._config.azureKeyUrl; }
@@ -350,6 +358,12 @@ class LclConfig {
     }
     if (process.env.LCL_CMK_PROVIDER) {
       this._config.cmkProvider = process.env.LCL_CMK_PROVIDER;
+    }
+    if (process.env.LCL_TENANT) {
+      this._config.tenant = process.env.LCL_TENANT;
+    }
+    if (process.env.LCL_REALM) {
+      this._config.realm = process.env.LCL_REALM;
     }
 
     if (this._sources.indexOf('environment') === -1) {
