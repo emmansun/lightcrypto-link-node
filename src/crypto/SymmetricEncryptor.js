@@ -2,33 +2,50 @@
 
 /**
  * Base class for symmetric encryption/decryption.
- * Subclasses must implement encrypt(), decrypt(), computeKcv(), and getAlgorithm().
+ * Stateless, purely-functional interface matching Java SymmetricEncryptor.
+ *
+ * Subclasses must implement:
+ *   encrypt(key, iv, plaintext, aad) → ciphertext
+ *   decrypt(key, iv, ciphertext, aad) → plaintext
+ *   computeKcv(key) → hex string
+ *   algorithmId() → AlgorithmId entry
  */
 class SymmetricEncryptor {
   /**
-   * @returns {string} The algorithm identifier (e.g., "AES_256_GCM")
+   * @returns {Object} AlgorithmId registry entry
    */
-  getAlgorithm() {
-    throw new Error('getAlgorithm() must be implemented by subclass');
+  algorithmId() {
+    throw new Error('algorithmId() must be implemented by subclass');
   }
 
   /**
-   * Encrypt plaintext with the given key.
-   * @param {Buffer} key - The encryption key
-   * @param {Buffer} plaintext - The data to encrypt
-   * @returns {Buffer} The ciphertext in format [IV] || [ciphertext (+ tag for GCM)]
+   * @returns {string} Algorithm name (e.g., "AES_256_GCM")
    */
-  encrypt(key, plaintext) {
+  getAlgorithm() {
+    return this.algorithmId().name;
+  }
+
+  /**
+   * Encrypt plaintext with explicit IV and AAD.
+   * @param {Buffer} key - The encryption key
+   * @param {Buffer} iv - Initialization vector (generated externally)
+   * @param {Buffer} plaintext - The data to encrypt
+   * @param {Buffer} [aad] - Additional Authenticated Data (GCM only, ignored by CBC)
+   * @returns {Buffer} Ciphertext only (GCM: CT‖Tag; CBC: PKCS5-padded CT). Does NOT include IV.
+   */
+  encrypt(key, iv, plaintext, aad) {
     throw new Error('encrypt() must be implemented by subclass');
   }
 
   /**
-   * Decrypt ciphertext with the given key.
+   * Decrypt ciphertext with explicit IV and AAD.
    * @param {Buffer} key - The decryption key
-   * @param {Buffer} data - The ciphertext in format [IV] || [ciphertext (+ tag for GCM)]
-   * @returns {Buffer} The decrypted plaintext
+   * @param {Buffer} iv - Initialization vector
+   * @param {Buffer} ciphertext - Ciphertext (GCM: CT‖Tag; CBC: PKCS5-padded CT)
+   * @param {Buffer} [aad] - Additional Authenticated Data (GCM only, ignored by CBC)
+   * @returns {Buffer} Decrypted plaintext
    */
-  decrypt(key, data) {
+  decrypt(key, iv, ciphertext, aad) {
     throw new Error('decrypt() must be implemented by subclass');
   }
 

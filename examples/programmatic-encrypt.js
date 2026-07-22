@@ -46,7 +46,7 @@ async function main() {
     _k: phoneEncrypted._k,
     _a: phoneEncrypted._a,
     _t: phoneEncrypted._t,
-    c: `<Buffer ${phoneEncrypted.c.length} bytes>`
+    c: phoneEncrypted.c.length > 30 ? phoneEncrypted.c.slice(0, 30) + '...' : phoneEncrypted.c
   });
 
   // Decrypt it back

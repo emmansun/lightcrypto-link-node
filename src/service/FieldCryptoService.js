@@ -4,6 +4,7 @@ const CryptoCodec = require('../crypto/CryptoCodec');
 const BsonCodec = require('../crypto/BsonCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
+const Namespace = require('../namespace/Namespace');
 
 /**
  * Custom error classes for crypto operations.
@@ -26,7 +27,7 @@ class DecryptionError extends Error {
  * FieldCryptoService - Encrypts/decrypts individual field values.
  * Builds and parses the encrypted sub-document format compatible with Java LightCrypto-Link.
  *
- * Sub-document format: { _e: 1, _k: kid, _a: algorithm, _t: typeMarker, c: ciphertext, b?: blindIndex }
+ * Sub-document format: { _e: 1, _k: kid, _a: algorithm, _t: typeMarker, c: Base64URL string, b?: blindIndex }
  */
 class FieldCryptoService {
   constructor() {
@@ -49,6 +50,8 @@ class FieldCryptoService {
    * @param {string} [options.mongooseType] - Mongoose schema type hint
    * @param {string} [options.customFieldName] - Custom field name for blind index
    * @param {string} [options.structuredType] - Structured type marker ('DOC', 'COL', 'MAP')
+   * @param {import('../namespace/Namespace')} [options.namespace] - Namespace instance
+   * @param {number} [options.dekVersion=1] - DEK version
    * @returns {Object} Encrypted sub-document
    */
   encryptField(value, fieldName, dek, hmacKey, activeKid, algorithm, options = {}) {
@@ -60,13 +63,14 @@ class FieldCryptoService {
     const mongooseType = options.mongooseType;
     const effectiveFieldName = options.customFieldName || fieldName;
     const structuredType = options.structuredType;
+    const namespace = options.namespace || Namespace.parse(`${effectiveFieldName}#${effectiveFieldName}`);
+    const dekVersion = options.dekVersion || 1;
 
     // Structured type path: DOC / COL / MAP
     if (structuredType === 'DOC' || structuredType === 'MAP') {
-      // Convert Mongoose SubDocument to plain object if needed
       const plainObj = (value && typeof value.toObject === 'function') ? value.toObject() : value;
       const plaintext = this._bsonCodec.encodeDocument(plainObj);
-      const ciphertext = this._codec.encrypt(dek, plaintext, algorithm);
+      const ciphertext = this._codec.encrypt(dek, plaintext, algorithm, namespace, dekVersion);
       return {
         _e: 1,
         _k: activeKid,
@@ -78,7 +82,7 @@ class FieldCryptoService {
 
     if (structuredType === 'COL') {
       const plaintext = this._bsonCodec.encodeCollection(value);
-      const ciphertext = this._codec.encrypt(dek, plaintext, algorithm);
+      const ciphertext = this._codec.encrypt(dek, plaintext, algorithm, namespace, dekVersion);
       return {
         _e: 1,
         _k: activeKid,
@@ -88,12 +92,9 @@ class FieldCryptoService {
       };
     }
 
-    // Scalar path (existing behavior)
-    // Resolve type marker
+    // Scalar path
     const typeMarker = this._serializer.resolveTypeMarker(value, mongooseType);
 
-    // Serialize value to plaintext bytes
-    // BYTES: raw bytes (matches Java serialize(byte[])); all others: UTF-8 of serialized string
     let plaintext;
     let serializedString;
     if (typeMarker === 'BYTES' && Buffer.isBuffer(value)) {
@@ -103,10 +104,10 @@ class FieldCryptoService {
       plaintext = Buffer.from(serializedString, 'utf8');
     }
 
-    // Encrypt
-    const ciphertext = this._codec.encrypt(dek, plaintext, algorithm);
+    // Encrypt — produces Base64URL string
+    const ciphertext = this._codec.encrypt(dek, plaintext, algorithm, namespace, dekVersion);
 
-    // Build sub-document
+    // Build sub-document (c is now a string, not Buffer)
     const subDoc = {
       _e: 1,
       _k: activeKid,
@@ -117,11 +118,10 @@ class FieldCryptoService {
 
     // Compute blind index if enabled
     if (blindIndex) {
-      // In fact, should not build blind index on BYTES type, so postpone serialization to string
       if (typeMarker === 'BYTES' && Buffer.isBuffer(value)) {
-        serializedString = value.toString('base64'); // for blind index only
+        serializedString = value.toString('base64');
       }
-      subDoc.b = this._codec.generateBlindIndex(hmacKey, effectiveFieldName, serializedString);
+      subDoc.b = this._codec.generateBlindIndex(hmacKey, namespace, effectiveFieldName, serializedString);
     }
 
     return subDoc;
@@ -132,7 +132,7 @@ class FieldCryptoService {
    * @param {Object} subDocument - The encrypted sub-document
    * @param {Buffer} dek - Data encryption key
    * @param {Buffer} hmacKey - HMAC key (unused for decryption, reserved for verification)
-   * @param {string} algorithm - Default algorithm (overridden by _a field)
+   * @param {string} algorithm - Default algorithm (overridden by _a field or Wire Format header)
    * @returns {*} Decrypted plaintext value
    */
   decryptField(subDocument, dek, hmacKey, algorithm) {
@@ -159,35 +159,27 @@ class FieldCryptoService {
       throw new DecryptionError('Unsupported algorithm: no algorithm specified in sub-document');
     }
 
-    // Check algorithm is supported
-    try {
-      this._codec.getEncryptor(algo);
-    } catch (e) {
-      throw new DecryptionError(`Unsupported algorithm: ${algo}`);
-    }
-
-    // Get ciphertext
+    // Get ciphertext — now expected as Base64URL string (Wire Format V1) or legacy Buffer
     const ciphertext = subDocument.c;
     if (!ciphertext) {
       throw new DecryptionError('Missing ciphertext field in encrypted sub-document');
     }
 
-    // Ensure ciphertext is a Buffer (handle BSON Binary, Buffer, and base64 string)
-    let cipherBuffer;
-    if (Buffer.isBuffer(ciphertext)) {
-      cipherBuffer = ciphertext;
-    } else if (ciphertext && ciphertext._bsontype === 'Binary' && ciphertext.buffer) {
-      cipherBuffer = ciphertext.buffer;
-    } else if (typeof ciphertext === 'string') {
-      cipherBuffer = Buffer.from(ciphertext, 'base64');
-    } else {
-      cipherBuffer = Buffer.from(ciphertext);
-    }
-
     // Decrypt
     let plaintext;
     try {
-      plaintext = this._codec.decrypt(dek, cipherBuffer, algo);
+      if (typeof ciphertext === 'string') {
+        // Wire Format V1 Base64URL string
+        plaintext = this._codec.decrypt(dek, ciphertext, algo);
+      } else if (Buffer.isBuffer(ciphertext)) {
+        // Legacy Buffer format
+        plaintext = this._codec.decrypt(dek, ciphertext, algo);
+      } else if (ciphertext && ciphertext._bsontype === 'Binary' && ciphertext.buffer) {
+        // BSON Binary → Buffer
+        plaintext = this._codec.decrypt(dek, ciphertext.buffer, algo);
+      } else {
+        plaintext = this._codec.decrypt(dek, Buffer.from(ciphertext), algo);
+      }
     } catch (e) {
       throw new DecryptionError(`Decryption failed: ${e.message}`);
     }
@@ -204,8 +196,7 @@ class FieldCryptoService {
       return this._bsonCodec.decodeCollection(plaintext);
     }
 
-    // Scalar path (existing behavior)
-    // BYTES: return raw decrypted bytes (matches Java); all others: UTF-8 string → deserialize
+    // Scalar path
     if (typeMarker === 'BYTES') {
       return plaintext;
     }

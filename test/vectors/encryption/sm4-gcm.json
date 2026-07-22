@@ -1,0 +1,82 @@
+[
+  {
+    "id": "enc-sm4gcm-001",
+    "algorithm": "SM4_GCM",
+    "algorithmId": 3,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "746573742d706c61696e746578742d534d345f47434d2d30",
+      "namespace": "default.default.User#field0",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0103001b64656661756c742e64656661756c742e55736572236669656c6430000000010c000102030405060708090a0b0000e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c74e2e38edc444cad750fad4c56741911b",
+      "ciphertextHex": "e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c74e2e38edc444cad750fad4c56741911b"
+    }
+  },
+  {
+    "id": "enc-sm4gcm-002",
+    "algorithm": "SM4_GCM",
+    "algorithmId": 3,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "746573742d706c61696e746578742d534d345f47434d2d31",
+      "namespace": "default.default.User#field1",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0103001b64656661756c742e64656661756c742e55736572236669656c6431000000010c000102030405060708090a0b0000e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c6acfd701ffa88fd09bba151b501060eca",
+      "ciphertextHex": "e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c6acfd701ffa88fd09bba151b501060eca"
+    }
+  },
+  {
+    "id": "enc-sm4gcm-003",
+    "algorithm": "SM4_GCM",
+    "algorithmId": 3,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "746573742d706c61696e746578742d534d345f47434d2d32",
+      "namespace": "default.default.User#field2",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0103001b64656661756c742e64656661756c742e55736572236669656c6432000000010c000102030405060708090a0b0000e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c54988a909b9dca56a864dde25abceaeb8",
+      "ciphertextHex": "e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c54988a909b9dca56a864dde25abceaeb8"
+    }
+  },
+  {
+    "id": "enc-sm4gcm-004",
+    "algorithm": "SM4_GCM",
+    "algorithmId": 3,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "746573742d706c61696e746578742d534d345f47434d2d33",
+      "namespace": "default.default.User#field3",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0103001b64656661756c742e64656661756c742e55736572236669656c6433000000010c000102030405060708090a0b0000e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c4ab5be1fb871092b46d165b55cd893169",
+      "ciphertextHex": "e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c4ab5be1fb871092b46d165b55cd893169"
+    }
+  },
+  {
+    "id": "enc-sm4gcm-005",
+    "algorithm": "SM4_GCM",
+    "algorithmId": 3,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "746573742d706c61696e746578742d534d345f47434d2d34",
+      "namespace": "default.default.User#field4",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0103001b64656661756c742e64656661756c742e55736572236669656c6434000000010c000102030405060708090a0b0000e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c341631b253f7415acfd94c104fe5fee5d",
+      "ciphertextHex": "e323ad8fe41ae96196f20028a9cfd4356ca35e8c724438c341631b253f7415acfd94c104fe5fee5d"
+    }
+  }
+]

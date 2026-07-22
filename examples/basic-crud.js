@@ -5,7 +5,7 @@
  */
 
 const mongoose = require('mongoose');
-const { lclCryptoPlugin, KeyVaultService, LocalCmkProvider, LclConfig } = require('../src');
+const { lclCryptoPlugin, KeyVaultService, LocalCmkProvider, LclConfig, prepareEncryptedSchema } = require('../src');
 
 async function main() {
   // 1. Load configuration
@@ -26,13 +26,13 @@ async function main() {
     cacheTtl: config.cacheTtl
   });
 
-  // 4. Define schema with encrypted fields
-  const userSchema = new mongoose.Schema({
+  // 4. Define schema with encrypted fields (Mongoose 9: use prepareEncryptedSchema)
+  const userSchema = new mongoose.Schema(prepareEncryptedSchema({
     name: { type: String, required: true },
     phone: { type: String, encrypt: true, blindIndex: true },
     ssn: { type: String, encrypt: true },
     email: { type: String }
-  });
+  }));
 
   // 5. Register the crypto plugin
   userSchema.plugin(lclCryptoPlugin, {

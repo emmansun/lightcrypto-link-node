@@ -65,9 +65,16 @@ Structured types use BSON binary serialization instead of string serialization. 
 
 ## Blind Index Serialization
 
-Blind indexes are deterministic — the same input always produces the same HMAC output. This enables exact-match queries on encrypted fields without decryption.
+Blind indexes are deterministic — the same input always produces the same HMAC output within the same namespace. This enables exact-match queries on encrypted fields without decryption.
+
+The blind index computation uses a two-step process:
+
+1. **Namespace-scoped key derivation**: A per-namespace HMAC key is derived via HKDF-SHA256 from the master HMAC key, using `SHA-256(namespace.canonicalBytes())` as salt and `"lcl-blind-index-v1"` as info.
+2. **HMAC-SHA256**: The blind index is `HMAC-SHA256(derivedKey, fieldName + ":" + normalize(value))`, encoded as Base64URL (no padding).
+
+This ensures that the same value in different namespaces produces different blind indexes, preventing cross-tenant correlation.
 
 ```javascript
-// Blind index is HMAC-SHA-256 → Base64URL (no padding)
-// Same field name + same value → same blind index across Java and Node.js
+// Blind index = HMAC-SHA-256(HKDF-derived key, fieldName + ":" + normalizedValue) → Base64URL (no padding)
+// Same namespace + same field name + same value → same blind index across Java and Node.js
 ```

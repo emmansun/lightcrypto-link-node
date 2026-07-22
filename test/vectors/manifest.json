@@ -1,0 +1,15 @@
+{
+  "vectorSuiteVersion": "1.0.0",
+  "wireFormatVersion": 1,
+  "interopVersion": 1,
+  "generatedAt": "2026-07-21T07:27:48.749463300Z",
+  "files": [
+    {"path": "encryption/aes-256-gcm.json", "sha256": "9a57c5f151f3826e2eaa0dd0589f8cd183c5cbfbefc21ba53010c6db8fec7e6b"},
+    {"path": "encryption/aes-256-cbc.json", "sha256": "b188391c33d8d876f936cf6a92bc9886c8f0c084be883762928e35b336c549f3"},
+    {"path": "encryption/sm4-gcm.json", "sha256": "f9ed30d1e2caa8cfb8ed3cf53571f7b672a2c92a7f5b3d73bc3a23db408c0161"},
+    {"path": "encryption/sm4-cbc.json", "sha256": "6e18726936db972ce1c9ff5f4d10d852def681d9ed835b6e86e4eb0c0cff088b"},
+    {"path": "blind-index/hmac-sha256.json", "sha256": "a771eca987b148770709a15e0b441f10f1c377cd418044f893625a173c2a00d5"},
+    {"path": "kcv/kcv.json", "sha256": "092c9fe276dfc0658171d3370883c00d1b1add7c2847610132b305c562113caf"},
+    {"path": "roundtrip/roundtrip.json", "sha256": "eaa79309b1e1da4eef8810ed33e2d6f6b164535af059bfe70f352b7f9a41f1c9"}
+  ]
+}

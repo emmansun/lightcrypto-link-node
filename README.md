@@ -2,9 +2,9 @@
 
 Lightweight application-level field encryption (ALFE) for Node.js/Mongoose and MongoDB.
 
-Transparent encrypt/decrypt on write/read, HMAC blind index for exact-match queries,
+Transparent encrypt/decrypt on write/read, HKDF-based blind index for exact-match queries,
 multi-DEK envelope encryption with key rotation, multi-KMS/SM-crypto support,
-and **BSON format compatibility** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
+and **byte-level Wire Format V1 compatibility** with the Java [LightCrypto-Link](https://github.com/emmansun/LightCrypto-Link) ecosystem.
 
 [![codecov](https://codecov.io/github/emmansun/lightcrypto-link-node/graph/badge.svg?token=nQ733ApHBI)](https://codecov.io/github/emmansun/lightcrypto-link-node)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
@@ -24,7 +24,7 @@ and **BSON format compatibility** with the Java [LightCrypto-Link](https://githu
 Deep docs are in [docs](docs/):
 
 - [Configuration](docs/configuration.md) — env vars, secret managers, CMK provider setup
-- [Architecture](docs/architecture.md) — envelope encryption, key vault format, rotation
+- [Architecture](docs/architecture.md) — envelope encryption, Wire Format V1, namespace model, key vault format, rotation
 - [CMK Provider](docs/cmk-provider.md) — custom provider interface and built-in providers
 - [Type Mapping](docs/type-mapping.md) — Java ↔ Node.js type compatibility
 - [Troubleshooting](docs/troubleshooting.md) — common errors, security, limitations
@@ -32,7 +32,7 @@ Deep docs are in [docs](docs/):
 ## Features
 
 - Transparent field encryption via Mongoose plugin (pre-save/post-find hooks)
-- Blind indexing for exact-match queries (HMAC-SHA-256)
+- Blind indexing for exact-match queries (HKDF-SHA256 namespace-scoped key derivation + HMAC-SHA-256)
 - Multiple algorithms: AES-256-GCM (default), AES-256-CBC, SM4-CBC (China compliance)
 - Structured type encryption: whole-object (`DOC`), whole-array (`COL`), element-level array encryption
 - Nested path encryption for sub-documents and array elements (e.g., `address.street`, `items[].price`)
@@ -40,6 +40,7 @@ Deep docs are in [docs](docs/):
 - Per-entity DEK versioning and rotation
 - Pluggable CMK providers: Local, Azure Key Vault, Alibaba Cloud KMS
 - Zero third-party crypto dependencies (native Node.js `crypto`)
+- **Wire Format V1** cross-language binary compatibility with Java LightCrypto-Link (verified by golden vector test suite)
 - BSON format compatible with Java LightCrypto-Link (DOC, COL, MAP type markers)
 
 ## Quick Start
@@ -204,7 +205,7 @@ const programmatic = new ProgrammaticCryptoService({ keyVaultService, algorithm:
 
 // Encrypt a scalar value
 const subDoc = await programmatic.encryptValue('13800138000', 'User');
-// → { _e: 1, _k: 'v1-abcd1234', _a: 'AES_256_GCM', _t: 'STR', c: <Buffer> }
+// → { _e: 1, _k: 'v1-abcd1234', _a: 'AES_256_GCM', _t: 'STR', c: '<Base64URL string>' }
 
 // Decrypt a sub-document
 const plaintext = await programmatic.decryptValue(subDoc);
@@ -222,7 +223,8 @@ For low-level field operations (without key vault integration), use `FieldCrypto
 const { FieldCryptoService } = require('lightcrypto-link-node');
 const fieldService = new FieldCryptoService();
 
-const encrypted = fieldService.encryptField(value, fieldName, dek, hmacKey, kid, algorithm);
+const encrypted = fieldService.encryptField(value, fieldName, dek, hmacKey, kid, algorithm, { namespace, dekVersion });
+// → { _e: 1, _k: kid, _a: algorithm, _t: 'STR', c: '<Base64URL string>' }
 const decrypted = fieldService.decryptField(encrypted, dek, hmacKey, algorithm);
 ```
 
@@ -247,6 +249,9 @@ node examples/alibaba-kms.js         # Alibaba Cloud KMS
 lightcrypto-link-node/
 ├── src/
 │   ├── crypto/          # Encryptor implementations (AES-GCM, AES-CBC, SM4-CBC, BsonCodec)
+│   ├── format/          # Wire Format V1 (AlgorithmId, WireFormatEncoder, WireFormatDecoder)
+│   ├── namespace/       # Namespace model (tenant.realm.entity#field)
+│   ├── blindindex/      # HKDF-SHA256 blind index engine
 │   ├── service/         # KeyVaultService, FieldCryptoService, TypeSerializer
 │   ├── provider/        # CMK providers (Local, Azure, Alibaba)
 │   ├── plugin/          # Mongoose plugin and query rewriter
@@ -256,6 +261,8 @@ lightcrypto-link-node/
 ├── test/
 │   ├── unit/
 │   ├── integration/
+│   ├── golden/          # Java golden vector test suite
+│   ├── vectors/         # Java-generated test vectors
 │   └── interoperability/
 ├── docs/                # Detailed documentation
 ├── examples/            # Runnable examples
@@ -267,7 +274,7 @@ lightcrypto-link-node/
 - **Node.js**: 22.x (recommended), 24.x
 - **Mongoose**: 8.x, 9.x
 - **MongoDB**: 5.0+, 6.0+, 7.0+, 8.0+
-- **Java LightCrypto-Link**: BSON format compatible (DOC, COL, MAP type markers). Note: MAP encryption from Node.js is not yet supported; MAP decryption from Java-encrypted documents works.
+- **Java LightCrypto-Link**: Full Wire Format V1 byte-level compatibility (encryption, blind index, KCV, roundtrip verified by golden vector suite). BSON format compatible (DOC, COL, MAP type markers). Note: SM4-GCM encryption from Node.js is not yet supported (OpenSSL limitation); SM4-GCM decryption and wire format parsing work.
 
 ## License
 

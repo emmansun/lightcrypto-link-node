@@ -35,6 +35,50 @@ describe('index.js - public API exports', () => {
     });
   });
 
+  describe('Format module', () => {
+    test('exports AlgorithmId', () => {
+      expect(lib.AlgorithmId).toBeDefined();
+      expect(lib.AlgorithmId.AES_256_GCM).toBeDefined();
+    });
+
+    test('exports fromName', () => {
+      expect(typeof lib.fromName).toBe('function');
+    });
+
+    test('exports fromByte', () => {
+      expect(typeof lib.fromByte).toBe('function');
+    });
+
+    test('exports WireFormatEncoder', () => {
+      expect(lib.WireFormatEncoder).toBeDefined();
+      expect(typeof lib.WireFormatEncoder).toBe('function');
+    });
+
+    test('exports WireFormatDecoder', () => {
+      expect(lib.WireFormatDecoder).toBeDefined();
+      expect(typeof lib.WireFormatDecoder).toBe('function');
+    });
+  });
+
+  describe('Namespace module', () => {
+    test('exports Namespace', () => {
+      expect(lib.Namespace).toBeDefined();
+      expect(typeof lib.Namespace).toBe('function');
+    });
+
+    test('Namespace.parse works', () => {
+      const ns = lib.Namespace.parse('User#phone');
+      expect(ns.canonical()).toBe('default.default.User#phone');
+    });
+  });
+
+  describe('BlindIndex module', () => {
+    test('exports BlindIndexEngine', () => {
+      expect(lib.BlindIndexEngine).toBeDefined();
+      expect(typeof lib.BlindIndexEngine).toBe('function');
+    });
+  });
+
   describe('Services module', () => {
     test('exports TypeSerializer', () => {
       expect(lib.TypeSerializer).toBeDefined();

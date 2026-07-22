@@ -7,6 +7,17 @@ const AesGcmEncryptor = require('./crypto/AesGcmEncryptor');
 const AesCbcEncryptor = require('./crypto/AesCbcEncryptor');
 const Sm4CbcEncryptor = require('./crypto/Sm4CbcEncryptor');
 
+// Format layer
+const { AlgorithmId, fromName, fromByte } = require('./format/AlgorithmId');
+const WireFormatEncoder = require('./format/WireFormatEncoder');
+const WireFormatDecoder = require('./format/WireFormatDecoder');
+
+// Namespace
+const Namespace = require('./namespace/Namespace');
+
+// Blind Index
+const BlindIndexEngine = require('./blindindex/BlindIndexEngine');
+
 const TypeSerializer = require('./service/TypeSerializer');
 const TypeDeserializer = require('./service/TypeDeserializer');
 const KeyVaultService = require('./service/KeyVaultService');
@@ -31,6 +42,19 @@ module.exports = {
   AesGcmEncryptor,
   AesCbcEncryptor,
   Sm4CbcEncryptor,
+
+  // Format
+  AlgorithmId,
+  fromName,
+  fromByte,
+  WireFormatEncoder,
+  WireFormatDecoder,
+
+  // Namespace
+  Namespace,
+
+  // Blind Index
+  BlindIndexEngine,
 
   // Services
   TypeSerializer,

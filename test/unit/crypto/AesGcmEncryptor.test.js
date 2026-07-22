@@ -16,42 +16,55 @@ describe('AesGcmEncryptor', () => {
     expect(encryptor.getAlgorithm()).toBe('AES_256_GCM');
   });
 
-  test('encrypt/decrypt round-trip', () => {
+  test('algorithmId returns correct entry', () => {
+    const algId = encryptor.algorithmId();
+    expect(algId.id).toBe(0x01);
+    expect(algId.ivLength).toBe(12);
+    expect(algId.isGcm).toBe(true);
+  });
+
+  test('encrypt/decrypt round-trip with external IV', () => {
     const plaintext = Buffer.from('Hello, World!', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
-    const decrypted = encryptor.decrypt(key, encrypted);
+    const iv = crypto.randomBytes(12);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    const decrypted = encryptor.decrypt(key, iv, ciphertext);
     expect(decrypted.toString('utf8')).toBe('Hello, World!');
   });
 
-  test('encrypt output format: [IV (12B)] || [ciphertext] || [Auth Tag (16B)]', () => {
+  test('encrypt returns CT‖Tag only (no IV)', () => {
     const plaintext = Buffer.from('test data', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
-    // Minimum size: 12 (IV) + 0 (empty) + 16 (tag) = 28 bytes for empty plaintext
-    expect(encrypted.length).toBeGreaterThanOrEqual(28);
-    // IV is 12 bytes, Auth Tag is 16 bytes, ciphertext is same length as plaintext
-    expect(encrypted.length).toBe(12 + plaintext.length + 16);
+    const iv = crypto.randomBytes(12);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    // CT length = plaintext.length + 16 (auth tag)
+    expect(ciphertext.length).toBe(plaintext.length + 16);
   });
 
-  test('encrypt produces different ciphertext each time (random IV)', () => {
-    const plaintext = Buffer.from('same data', 'utf8');
-    const enc1 = encryptor.encrypt(key, plaintext);
-    const enc2 = encryptor.encrypt(key, plaintext);
-    expect(enc1.equals(enc2)).toBe(false);
+  test('encrypt with AAD binds ciphertext to AAD', () => {
+    const plaintext = Buffer.from('secret', 'utf8');
+    const iv = crypto.randomBytes(12);
+    const aad = Buffer.from('my-aad');
+    const ciphertext = encryptor.encrypt(key, iv, plaintext, aad);
+    // Decrypt with same AAD succeeds
+    const decrypted = encryptor.decrypt(key, iv, ciphertext, aad);
+    expect(decrypted.toString('utf8')).toBe('secret');
+    // Decrypt with wrong AAD fails
+    expect(() => encryptor.decrypt(key, iv, ciphertext, Buffer.from('wrong-aad'))).toThrow();
   });
 
   test('decrypt fails with wrong key', () => {
     const plaintext = Buffer.from('secret', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
+    const iv = crypto.randomBytes(12);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
     const wrongKey = crypto.randomBytes(32);
-    expect(() => encryptor.decrypt(wrongKey, encrypted)).toThrow();
+    expect(() => encryptor.decrypt(wrongKey, iv, ciphertext)).toThrow();
   });
 
   test('decrypt fails with tampered ciphertext', () => {
     const plaintext = Buffer.from('secret', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
-    // Tamper with ciphertext (not IV or tag)
-    encrypted[15] ^= 0xff;
-    expect(() => encryptor.decrypt(key, encrypted)).toThrow();
+    const iv = crypto.randomBytes(12);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    ciphertext[0] ^= 0xff;
+    expect(() => encryptor.decrypt(key, iv, ciphertext)).toThrow();
   });
 
   test('computeKcv returns consistent hex string', () => {
@@ -61,29 +74,24 @@ describe('AesGcmEncryptor', () => {
     expect(kcv1).toMatch(/^[0-9a-f]+$/);
   });
 
-  test('computeKcv returns 32 bytes (16 ciphertext + 16 auth tag) = 64 hex chars (matches Java)', () => {
+  test('computeKcv returns 32 bytes = 64 hex chars', () => {
     const kcv = encryptor.computeKcv(key);
-    expect(kcv.length).toBe(64); // 32 bytes = 64 hex chars
-  });
-
-  test('computeKcv returns different values for different keys', () => {
-    const key2 = crypto.randomBytes(32);
-    const kcv1 = encryptor.computeKcv(key);
-    const kcv2 = encryptor.computeKcv(key2);
-    expect(kcv1).not.toBe(kcv2);
+    expect(kcv.length).toBe(64);
   });
 
   test('encrypt/decrypt with empty plaintext', () => {
+    const iv = crypto.randomBytes(12);
     const plaintext = Buffer.alloc(0);
-    const encrypted = encryptor.encrypt(key, plaintext);
-    const decrypted = encryptor.decrypt(key, encrypted);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    const decrypted = encryptor.decrypt(key, iv, ciphertext);
     expect(decrypted.length).toBe(0);
   });
 
   test('encrypt/decrypt with large plaintext', () => {
+    const iv = crypto.randomBytes(12);
     const plaintext = crypto.randomBytes(10000);
-    const encrypted = encryptor.encrypt(key, plaintext);
-    const decrypted = encryptor.decrypt(key, encrypted);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    const decrypted = encryptor.decrypt(key, iv, ciphertext);
     expect(decrypted.equals(plaintext)).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ const {
   lclCryptoPlugin,
   prepareEncryptedSchema
 } = require('../../src');
+const Namespace = require('../../src/namespace/Namespace');
 
 describe('Integration: ProgrammaticCryptoService', () => {
   let mongoServer;
@@ -227,7 +228,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
 
       expect(subDoc._e).toBe(1);
       expect(subDoc._t).toBe('DOC');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
 
       const decrypted = await programmaticService.decryptValue(subDoc, 'User');
       expect(decrypted).toEqual(obj);
@@ -239,7 +240,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
 
       expect(subDoc._e).toBe(1);
       expect(subDoc._t).toBe('COL');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
 
       const decrypted = await programmaticService.decryptValue(subDoc, 'User');
       expect(decrypted).toEqual(arr);
@@ -268,7 +269,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
     test('encryptValue with empty object → _t: DOC, decryptValue restores empty object', async () => {
       const subDoc = await programmaticService.encryptValue({}, 'User');
       expect(subDoc._t).toBe('DOC');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
 
       const decrypted = await programmaticService.decryptValue(subDoc, 'User');
       expect(decrypted).toEqual({});
@@ -277,7 +278,7 @@ describe('Integration: ProgrammaticCryptoService', () => {
     test('encryptValue with empty array → _t: COL, decryptValue restores empty array', async () => {
       const subDoc = await programmaticService.encryptValue([], 'User');
       expect(subDoc._t).toBe('COL');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
 
       const decrypted = await programmaticService.decryptValue(subDoc, 'User');
       expect(decrypted).toEqual([]);
@@ -295,7 +296,9 @@ describe('Integration: ProgrammaticCryptoService', () => {
 
       const mapValue = { key1: 'value1', key2: 'value2' };
       const bsonBytes = bsonCodec.encodeDocument(mapValue);
-      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM');
+      const ns = Namespace.parse('User#User');
+      const dekVersion = vaultEntry.dekVersion || 1;
+      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM', ns, dekVersion);
 
       const mapSubDoc = {
         _e: 1,
@@ -320,7 +323,9 @@ describe('Integration: ProgrammaticCryptoService', () => {
 
       const mapValue = { lang: 'en', theme: 'dark' };
       const bsonBytes = bsonCodec.encodeDocument(mapValue);
-      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM');
+      const ns2 = Namespace.parse('User#User');
+      const dekVersion2 = vaultEntry.dekVersion || 1;
+      const ciphertext = cryptoCodec.encrypt(vaultEntry.dek, bsonBytes, 'AES_256_GCM', ns2, dekVersion2);
 
       const mapSubDoc = {
         _e: 1,

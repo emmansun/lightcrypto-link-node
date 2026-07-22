@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { rewriteQuery } = require('../../../src/plugin/queryRewriter');
 const CryptoCodec = require('../../../src/crypto/CryptoCodec');
 const TypeSerializer = require('../../../src/service/TypeSerializer');
+const Namespace = require('../../../src/namespace/Namespace');
 
 describe('queryRewriter', () => {
   let codec;
@@ -73,10 +74,10 @@ describe('queryRewriter', () => {
 
   test('uses customFieldName for blind index generation', () => {
     const query = { email: 'test@example.com' };
-    const result = rewriteQuery(query, encryptedFields, codec, hmacKey, serializer);
+    const result = rewriteQuery(query, encryptedFields, codec, hmacKey, serializer, 'email');
 
     // Verify it uses 'email_addr' as the field name in HMAC computation
-    const expectedIndex = codec.generateBlindIndex(hmacKey, 'email_addr', 'test@example.com');
+    const expectedIndex = codec.generateBlindIndex(hmacKey, Namespace.parse('email#email_addr'), 'email_addr', 'test@example.com');
     expect(result['email.b']).toBe(expectedIndex);
   });
 
@@ -119,7 +120,7 @@ describe('queryRewriter', () => {
     const query = { age: 42 };
     const result = rewriteQuery(query, fieldsWithAge, codec, hmacKey, serializer);
 
-    const expectedIndex = codec.generateBlindIndex(hmacKey, 'age', '42');
+    const expectedIndex = codec.generateBlindIndex(hmacKey, Namespace.parse('age#age'), 'age', '42');
     expect(result['age.b']).toBe(expectedIndex);
   });
 
@@ -130,7 +131,7 @@ describe('queryRewriter', () => {
     const query = { active: true };
     const result = rewriteQuery(query, fieldsWithActive, codec, hmacKey, serializer);
 
-    const expectedIndex = codec.generateBlindIndex(hmacKey, 'active', 'true');
+    const expectedIndex = codec.generateBlindIndex(hmacKey, Namespace.parse('active#active'), 'active', 'true');
     expect(result['active.b']).toBe(expectedIndex);
   });
 

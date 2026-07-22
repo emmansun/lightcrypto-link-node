@@ -1,0 +1,82 @@
+[
+  {
+    "id": "enc-aes256gcm-001",
+    "algorithm": "AES_256_GCM",
+    "algorithmId": 1,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f47434d2d30",
+      "namespace": "default.default.User#field0",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0101001b64656661756c742e64656661756c742e55736572236669656c6430000000010c000102030405060708090a0b00003367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b52db15990c1db206576c6846d69ad286b",
+      "ciphertextHex": "3367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b52db15990c1db206576c6846d69ad286b"
+    }
+  },
+  {
+    "id": "enc-aes256gcm-002",
+    "algorithm": "AES_256_GCM",
+    "algorithmId": 1,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f47434d2d31",
+      "namespace": "default.default.User#field1",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0101001b64656661756c742e64656661756c742e55736572236669656c6431000000010c000102030405060708090a0b00003367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b4c29cb1c0971c1c4e84b3e7bc5f453544",
+      "ciphertextHex": "3367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b4c29cb1c0971c1c4e84b3e7bc5f453544"
+    }
+  },
+  {
+    "id": "enc-aes256gcm-003",
+    "algorithm": "AES_256_GCM",
+    "algorithmId": 1,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f47434d2d32",
+      "namespace": "default.default.User#field2",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0101001b64656661756c742e64656661756c742e55736572236669656c6432000000010c000102030405060708090a0b00003367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b731ea89306c555832922c43cf047d1234",
+      "ciphertextHex": "3367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b731ea89306c555832922c43cf047d1234"
+    }
+  },
+  {
+    "id": "enc-aes256gcm-004",
+    "algorithm": "AES_256_GCM",
+    "algorithmId": 1,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f47434d2d33",
+      "namespace": "default.default.User#field3",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0101001b64656661756c742e64656661756c742e55736572236669656c6433000000010c000102030405060708090a0b00003367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b6dec761603a9264196059201e32950f1b",
+      "ciphertextHex": "3367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b6dec761603a9264196059201e32950f1b"
+    }
+  },
+  {
+    "id": "enc-aes256gcm-005",
+    "algorithm": "AES_256_GCM",
+    "algorithmId": 1,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "746573742d706c61696e746578742d4145535f3235365f47434d2d34",
+      "namespace": "default.default.User#field4",
+      "dekVersion": 1,
+      "ivHex": "000102030405060708090a0b"
+    },
+    "expected": {
+      "wireFormatHex": "0101001b64656661756c742e64656661756c742e55736572236669656c6434000000010c000102030405060708090a0b00003367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b11506f8d19ac7d0cabf130b29b20d5cd5",
+      "ciphertextHex": "3367a56fe895ae7ae42fe3eec99d552cc685d806c54d003b7b2ac8b11506f8d19ac7d0cabf130b29b20d5cd5"
+    }
+  }
+]

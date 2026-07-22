@@ -73,7 +73,7 @@ describe('ProgrammaticCryptoService', () => {
       expect(result._k).toBe(activeKid);
       expect(result._a).toBe('AES_256_GCM');
       expect(result._t).toBe('STR');
-      expect(Buffer.isBuffer(result.c)).toBe(true);
+      expect(typeof result.c).toBe('string');
       expect(result._entity).toBe('User');
     });
 
@@ -277,9 +277,8 @@ describe('ProgrammaticCryptoService', () => {
     });
 
     test('unsupported algorithm in sub-document throws DecryptionError', async () => {
-      // Encrypt normally, then tamper the algorithm field
-      const subDoc = await svc.encryptValue('data', 'User');
-      subDoc._a = 'UNKNOWN_ALGO_XYZ';
+      // Use legacy Buffer format so that _a is actually consulted for algorithm selection
+      const subDoc = { _e: 1, _k: activeKid, _a: 'UNKNOWN_ALGO_XYZ', _t: 'STR', c: Buffer.from('test') };
 
       await expect(svc.decryptValue(subDoc, 'User')).rejects.toThrow(/Unsupported algorithm/);
     });

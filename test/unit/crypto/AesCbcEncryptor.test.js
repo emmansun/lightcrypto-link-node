@@ -16,45 +16,54 @@ describe('AesCbcEncryptor', () => {
     expect(encryptor.getAlgorithm()).toBe('AES_256_CBC');
   });
 
-  test('encrypt/decrypt round-trip', () => {
+  test('algorithmId returns correct entry', () => {
+    const algId = encryptor.algorithmId();
+    expect(algId.id).toBe(0x02);
+    expect(algId.ivLength).toBe(16);
+    expect(algId.isGcm).toBe(false);
+  });
+
+  test('encrypt/decrypt round-trip with external IV', () => {
     const plaintext = Buffer.from('Hello, CBC!', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
-    const decrypted = encryptor.decrypt(key, encrypted);
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    const decrypted = encryptor.decrypt(key, iv, ciphertext);
     expect(decrypted.toString('utf8')).toBe('Hello, CBC!');
   });
 
-  test('encrypt output format: [IV (16B)] || [padded ciphertext]', () => {
-    const plaintext = Buffer.from('test', 'utf8'); // 4 bytes
-    const encrypted = encryptor.encrypt(key, plaintext);
-    // With PKCS5 padding: 4 bytes → 16 bytes padded
-    // Total: 16 (IV) + 16 (padded) = 32
-    expect(encrypted.length).toBe(16 + 16);
+  test('encrypt returns PKCS5-padded ciphertext only (no IV)', () => {
+    const plaintext = Buffer.from('test', 'utf8'); // 4 bytes → 16 padded
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    expect(ciphertext.length).toBe(16); // padded to 16 bytes
   });
 
   test('padded ciphertext length is multiple of 16', () => {
-    const plaintext = Buffer.from('a'.repeat(17), 'utf8'); // 17 bytes → 32 padded
-    const encrypted = encryptor.encrypt(key, plaintext);
-    const ciphertextLength = encrypted.length - 16; // minus IV
-    expect(ciphertextLength % 16).toBe(0);
+    const plaintext = Buffer.from('a'.repeat(17), 'utf8');
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    expect(ciphertext.length % 16).toBe(0);
+    expect(ciphertext.length).toBe(32); // 17 → 32 with PKCS5
   });
 
-  test('encrypt produces different ciphertext each time', () => {
+  test('encrypt is deterministic with same IV', () => {
     const plaintext = Buffer.from('same', 'utf8');
-    const enc1 = encryptor.encrypt(key, plaintext);
-    const enc2 = encryptor.encrypt(key, plaintext);
-    expect(enc1.equals(enc2)).toBe(false);
+    const iv = Buffer.alloc(16, 0xAA);
+    const ct1 = encryptor.encrypt(key, iv, plaintext);
+    const ct2 = encryptor.encrypt(key, iv, plaintext);
+    expect(ct1.equals(ct2)).toBe(true);
   });
 
-  test('decrypt with wrong key produces different plaintext', () => {
+  test('decrypt with wrong key produces different plaintext or throws', () => {
     const plaintext = Buffer.from('secret', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
     const wrongKey = crypto.randomBytes(32);
-    // AES-CBC is not authenticated — wrong key may produce garbage or throw on padding
     try {
-      const decrypted = encryptor.decrypt(wrongKey, encrypted);
+      const decrypted = encryptor.decrypt(wrongKey, iv, ciphertext);
       expect(decrypted.toString('utf8')).not.toBe('secret');
     } catch (_e) {
-      // Padding error is also acceptable — wrong key can cause invalid padding
+      // Padding error is also acceptable
     }
   });
 

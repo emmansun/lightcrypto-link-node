@@ -183,6 +183,7 @@ class KeyVaultService {
       dek: newDek,
       hmacKey: newHmacKey,
       activeKid: newKid,
+      dekVersion: newVersion,
       expiresAt: Date.now() + this._cacheTtl,
       allKeys: new Map()
     };
@@ -338,6 +339,7 @@ class KeyVaultService {
       dek: activeDek,
       hmacKey: activeHmacKey,
       activeKid: vaultDoc.activeKid,
+      dekVersion: vaultDoc.v,
       expiresAt: Date.now() + this._cacheTtl,
       allKeys
     };

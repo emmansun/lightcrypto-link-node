@@ -9,39 +9,50 @@ describe('Sm4CbcEncryptor', () => {
 
   beforeEach(() => {
     encryptor = new Sm4CbcEncryptor();
-    key = crypto.randomBytes(16); // SM4 uses 16-byte key
+    key = crypto.randomBytes(16);
   });
 
   test('getAlgorithm returns SM4_CBC', () => {
     expect(encryptor.getAlgorithm()).toBe('SM4_CBC');
   });
 
-  test('encrypt/decrypt round-trip', () => {
+  test('algorithmId returns correct entry', () => {
+    const algId = encryptor.algorithmId();
+    expect(algId.id).toBe(0x04);
+    expect(algId.ivLength).toBe(16);
+    expect(algId.keyLength).toBe(16);
+    expect(algId.isGcm).toBe(false);
+  });
+
+  test('encrypt/decrypt round-trip with external IV', () => {
     const plaintext = Buffer.from('Hello, SM4!', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
-    const decrypted = encryptor.decrypt(key, encrypted);
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    const decrypted = encryptor.decrypt(key, iv, ciphertext);
     expect(decrypted.toString('utf8')).toBe('Hello, SM4!');
   });
 
-  test('encrypt output format: [IV (16B)] || [padded ciphertext]', () => {
+  test('encrypt returns PKCS5-padded ciphertext only (no IV)', () => {
     const plaintext = Buffer.from('test', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
-    // 16 (IV) + 16 (padded) = 32
-    expect(encrypted.length).toBe(32);
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
+    expect(ciphertext.length).toBe(16); // 4 bytes → 16 padded
   });
 
-  test('encrypt produces different ciphertext each time', () => {
+  test('encrypt is deterministic with same IV', () => {
     const plaintext = Buffer.from('same', 'utf8');
-    const enc1 = encryptor.encrypt(key, plaintext);
-    const enc2 = encryptor.encrypt(key, plaintext);
-    expect(enc1.equals(enc2)).toBe(false);
+    const iv = Buffer.alloc(16, 0xBB);
+    const ct1 = encryptor.encrypt(key, iv, plaintext);
+    const ct2 = encryptor.encrypt(key, iv, plaintext);
+    expect(ct1.equals(ct2)).toBe(true);
   });
 
   test('decrypt fails with wrong key', () => {
     const plaintext = Buffer.from('secret', 'utf8');
-    const encrypted = encryptor.encrypt(key, plaintext);
+    const iv = crypto.randomBytes(16);
+    const ciphertext = encryptor.encrypt(key, iv, plaintext);
     const wrongKey = crypto.randomBytes(16);
-    expect(() => encryptor.decrypt(wrongKey, encrypted)).toThrow();
+    expect(() => encryptor.decrypt(wrongKey, iv, ciphertext)).toThrow();
   });
 
   test('computeKcv returns consistent hex string', () => {

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "rt-aes-256-gcm",
+    "algorithm": "AES_256_GCM",
+    "algorithmId": 1,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "726f756e64747269702d4145535f3235365f47434d",
+      "namespace": "default.default.Test#AES_256_GCM",
+      "dekVersion": 1
+    },
+    "expected": {
+      "wireFormatBase64url": "AQEAIGRlZmF1bHQuZGVmYXVsdC5UZXN0I0FFU18yNTZfR0NNAAAAAQwW0clRackvfUyxpt8AAHfrrgWkVXynqBIdJ3TtlzZqQc-FR0ZC1kBGWVc3jBsU6pszB-M",
+      "roundtripOk": true
+    }
+  },
+  {
+    "id": "rt-aes-256-cbc",
+    "algorithm": "AES_256_CBC",
+    "algorithmId": 2,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "plaintextHex": "726f756e64747269702d4145535f3235365f434243",
+      "namespace": "default.default.Test#AES_256_CBC",
+      "dekVersion": 1
+    },
+    "expected": {
+      "wireFormatBase64url": "AQIAIGRlZmF1bHQuZGVmYXVsdC5UZXN0I0FFU18yNTZfQ0JDAAAAARD74MQ3K3mmgRxdW748ePsLAADc5-bm29YWo1X5fgH6GGDy3sc48dzxxVrWSgfVQnLKkQ",
+      "roundtripOk": true
+    }
+  },
+  {
+    "id": "rt-sm4-gcm",
+    "algorithm": "SM4_GCM",
+    "algorithmId": 3,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "726f756e64747269702d534d345f47434d",
+      "namespace": "default.default.Test#SM4_GCM",
+      "dekVersion": 1
+    },
+    "expected": {
+      "wireFormatBase64url": "AQMAHGRlZmF1bHQuZGVmYXVsdC5UZXN0I1NNNF9HQ00AAAABDPDAcggf6XjUWeLtSwAA-pcGNH10y9PkzeiIW3zUBJKzb-UtwPMmGWr0Ue-Ls7NR",
+      "roundtripOk": true
+    }
+  },
+  {
+    "id": "rt-sm4-cbc",
+    "algorithm": "SM4_CBC",
+    "algorithmId": 4,
+    "input": {
+      "keyHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintextHex": "726f756e64747269702d534d345f434243",
+      "namespace": "default.default.Test#SM4_CBC",
+      "dekVersion": 1
+    },
+    "expected": {
+      "wireFormatBase64url": "AQQAHGRlZmF1bHQuZGVmYXVsdC5UZXN0I1NNNF9DQkMAAAABEC9p1znYQTcUkRydw9yfwVMAAKgVQruE53nG7xsSP1rMpCX6zrpvAk8EjkvTcep2Tngo",
+      "roundtripOk": true
+    }
+  }
+]

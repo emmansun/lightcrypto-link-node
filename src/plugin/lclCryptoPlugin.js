@@ -4,6 +4,7 @@ const { FieldCryptoService } = require('../service/FieldCryptoService');
 const CryptoCodec = require('../crypto/CryptoCodec');
 const TypeSerializer = require('../service/TypeSerializer');
 const { rewriteQuery } = require('./queryRewriter');
+const Namespace = require('../namespace/Namespace');
 
 /**
  * Check if a value is a mongoose Schema instance.
@@ -489,7 +490,9 @@ function lclCryptoPlugin(schema, options) {
           {
             blindIndex: false,
             mongooseType: fieldConfig.mongooseType,
-            customFieldName: fieldConfig.customFieldName
+            customFieldName: fieldConfig.customFieldName,
+            namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
+            dekVersion: vaultEntry.dekVersion
           }
         );
 
@@ -520,7 +523,9 @@ function lclCryptoPlugin(schema, options) {
             {
               blindIndex: false,
               mongooseType: fieldConfig.mongooseType,
-              customFieldName: fieldConfig.customFieldName
+              customFieldName: fieldConfig.customFieldName,
+              namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
+              dekVersion: vaultEntry.dekVersion
             }
           );
           elem[fieldConfig.leafField] = encrypted;
@@ -558,7 +563,9 @@ function lclCryptoPlugin(schema, options) {
             {
               blindIndex: false,
               mongooseType: fieldConfig.mongooseType,
-              customFieldName: fieldConfig.customFieldName
+              customFieldName: fieldConfig.customFieldName,
+              namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
+              dekVersion: vaultEntry.dekVersion
             }
           );
           encryptedArray.push(encrypted);
@@ -570,7 +577,9 @@ function lclCryptoPlugin(schema, options) {
       const encryptOptions = {
         blindIndex: fieldConfig.blindIndex,
         mongooseType: fieldConfig.mongooseType,
-        customFieldName: fieldConfig.customFieldName
+        customFieldName: fieldConfig.customFieldName,
+        namespace: Namespace.parse(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`),
+        dekVersion: vaultEntry.dekVersion
       };
 
       // Pass structuredType for whole-object/whole-array encryption
@@ -621,7 +630,7 @@ function lclCryptoPlugin(schema, options) {
     const vaultEntry = await keyVaultService.ensureVaultInitialized(resolvedEntityName);
 
     const query = this.getQuery();
-    const rewrittenQuery = rewriteQuery(query, encryptedFields, codec, vaultEntry.hmacKey, serializer);
+    const rewrittenQuery = rewriteQuery(query, encryptedFields, codec, vaultEntry.hmacKey, serializer, resolvedEntityName);
     this.setQuery(rewrittenQuery);
   });
 
@@ -633,7 +642,7 @@ function lclCryptoPlugin(schema, options) {
     const vaultEntry = await keyVaultService.ensureVaultInitialized(resolvedEntityName);
 
     const query = this.getQuery();
-    const rewrittenQuery = rewriteQuery(query, encryptedFields, codec, vaultEntry.hmacKey, serializer);
+    const rewrittenQuery = rewriteQuery(query, encryptedFields, codec, vaultEntry.hmacKey, serializer, resolvedEntityName);
     this.setQuery(rewrittenQuery);
   });
 

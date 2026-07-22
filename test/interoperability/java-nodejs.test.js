@@ -6,6 +6,7 @@ const { FieldCryptoService } = require('../../src/service/FieldCryptoService');
 const CryptoCodec = require('../../src/crypto/CryptoCodec');
 const BsonCodec = require('../../src/crypto/BsonCodec');
 const TypeSerializer = require('../../src/service/TypeSerializer');
+const Namespace = require('../../src/namespace/Namespace');
 
 /**
  * Java Interoperability Tests
@@ -122,11 +123,12 @@ describe('Java Interoperability', () => {
   describe('Blind index interoperability', () => {
     test('blind index computation is deterministic and Base64URL', () => {
       const hmacKey = crypto.randomBytes(32);
+      const namespace = Namespace.parse('phone#phone');
       const fieldName = 'phone';
       const value = '13800138000';
 
-      const idx1 = codec.generateBlindIndex(hmacKey, fieldName, value);
-      const idx2 = codec.generateBlindIndex(hmacKey, fieldName, value);
+      const idx1 = codec.generateBlindIndex(hmacKey, namespace, fieldName, value);
+      const idx2 = codec.generateBlindIndex(hmacKey, namespace, fieldName, value);
 
       expect(idx1).toBe(idx2);
       expect(idx1.length).toBe(43);
@@ -135,8 +137,8 @@ describe('Java Interoperability', () => {
 
     test('blind index includes field name for isolation', () => {
       const hmacKey = crypto.randomBytes(32);
-      const idx1 = codec.generateBlindIndex(hmacKey, 'phone', 'same_value');
-      const idx2 = codec.generateBlindIndex(hmacKey, 'email', 'same_value');
+      const idx1 = codec.generateBlindIndex(hmacKey, Namespace.parse('phone#phone'), 'phone', 'same_value');
+      const idx2 = codec.generateBlindIndex(hmacKey, Namespace.parse('email#email'), 'email', 'same_value');
       expect(idx1).not.toBe(idx2);
     });
   });
@@ -270,7 +272,8 @@ describe('Java Interoperability', () => {
       // Simulate element-level encryption: each array element is encrypted independently
       const arr = ['secret1', 'secret2', 'secret3'];
       const encryptedElements = arr.map((elem, i) => {
-        return fieldService.encryptField(elem, `tags.${i}`, dek, TEST_HMAC_KEY, TEST_KID, algo);
+        const ns = Namespace.parse(`tags#tags.${i}`);
+        return fieldService.encryptField(elem, `tags.${i}`, dek, TEST_HMAC_KEY, TEST_KID, algo, { namespace: ns });
       });
 
       // Verify each element is a valid encrypted sub-document
@@ -279,7 +282,7 @@ describe('Java Interoperability', () => {
         expect(subDoc._k).toBe(TEST_KID);
         expect(subDoc._a).toBe('AES_256_GCM');
         expect(subDoc._t).toBe('STR');
-        expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+        expect(typeof subDoc.c).toBe('string');
       }
 
       // Verify round-trip
@@ -298,7 +301,8 @@ describe('Java Interoperability', () => {
 
       // Java encrypts these BSON bytes with AES-256-GCM using the same DEK
       const codec = new CryptoCodec();
-      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM');
+      const ns = Namespace.parse('test#test');
+      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM', ns, 1);
 
       // Build a Java-style sub-document
       const javaSubDoc = {
@@ -320,7 +324,8 @@ describe('Java Interoperability', () => {
       const javaBsonBytes = serialize({ _v: javaArr });
 
       const codec = new CryptoCodec();
-      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM');
+      const ns2 = Namespace.parse('test#test');
+      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM', ns2, 1);
 
       const javaSubDoc = {
         _e: 1,
@@ -340,7 +345,8 @@ describe('Java Interoperability', () => {
       const javaBsonBytes = serialize(javaMap);
 
       const codec = new CryptoCodec();
-      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM');
+      const ns3 = Namespace.parse('test#test');
+      const javaCiphertext = codec.encrypt(dek, javaBsonBytes, 'AES_256_GCM', ns3, 1);
 
       const javaSubDoc = {
         _e: 1,

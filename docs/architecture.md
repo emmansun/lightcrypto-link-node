@@ -55,19 +55,47 @@ Encrypted fields are stored as sub-documents:
   "_k": "v1-a3b2c1d4",
   "_a": "AES_256_GCM",
   "_t": "STR",
-  "c": "<Buffer>",
-  "b": "base64url-blind-index"
+  "c": "AQEAFGRlZmF1bHQuZGVmYXVsdC5Vc2VyI3Bob25lAAAAAQw...",
+  "b": "ylXcNVT8lNaPzZyV_2JQqpEBxx4_KSnGMhW-C01kV_E"
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `_e` | Encryption version (always `1`) |
-| `_k` | Key ID (`kid`) used for encryption |
-| `_a` | Algorithm identifier |
-| `_t` | Type marker for deserialization |
-| `c` | Ciphertext as BSON binary |
-| `b` | Blind index (optional, only if `blindIndex: true`) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `_e` | Number | Encryption version (always `1`) |
+| `_k` | String | Key ID (`kid`) used for encryption |
+| `_a` | String | Algorithm identifier |
+| `_t` | String | Type marker for deserialization |
+| `c` | String | Ciphertext as Base64URL-encoded Wire Format V1 blob |
+| `b` | String | Blind index (optional, only if `blindIndex: true`) |
+
+## Wire Format V1
+
+The `c` field contains a Base64URL-encoded binary blob with the following structure:
+
+```
+[1B version=0x01][1B algId][2B nsLen BE][NB namespace UTF-8][4B dekVersion BE][1B ivLen][IV bytes][2B aadExtLen=0x0000][ciphertext bytes]
+```
+
+| Offset | Size | Description |
+|--------|------|-------------|
+| 0 | 1 | Wire format version (`0x01`) |
+| 1 | 1 | Algorithm ID (`0x01`=AES_256_GCM, `0x02`=AES_256_CBC, `0x03`=SM4_GCM, `0x04`=SM4_CBC) |
+| 2 | 2 | Namespace length (big-endian) |
+| 4 | N | Namespace UTF-8 bytes (`tenant.realm.entity#field`) |
+| 4+N | 4 | DEK version (big-endian) |
+| 8+N | 1 | IV length |
+| 9+N | IV | Initialization vector bytes |
+| 9+N+IV | 2 | AAD extension length (always `0x0000`) |
+| 11+N+IV | rest | Ciphertext bytes (CT||Tag for GCM, padded CT for CBC) |
+
+### AAD Construction (GCM modes only)
+
+```
+AAD = [0x01][algId byte][namespace UTF-8 bytes][dekVersion 4B big-endian]
+```
+
+AAD provides authenticated but unencrypted metadata, binding the ciphertext to its namespace and DEK version.
 
 ## Key Rotation
 
@@ -95,7 +123,7 @@ keyVaultService.flushCache();
 | AES-256-GCM | 32 bytes | 12 bytes | Supported (default) |
 | AES-256-CBC | 32 bytes | 16 bytes | Supported (legacy) |
 | SM4-CBC | 16 bytes | 16 bytes | Supported (China compliance) |
-| SM4-GCM | 16 bytes | 12 bytes | Deferred (needs OpenSSL 3.3+) |
+| SM4-GCM | 16 bytes | 12 bytes | Registry only (sm4-gcm not available in Node.js OpenSSL) |
 
 ## Backward Compatibility
 
@@ -103,12 +131,37 @@ keyVaultService.flushCache();
 - If `_e` is undefined (plaintext historical data), the value is returned as-is without decryption.
 - This enables gradual migration from plaintext to encrypted data.
 
+## Namespace Model
+
+Each encrypted field is associated with a **four-part namespace**: `tenant.realm.entity#field`.
+
+- **Shorthand**: `Entity#field` expands to `default.default.Entity#field`
+- **Canonical form**: Always stored as `tenant.realm.entity#field` (e.g., `default.default.User#phone`)
+- **Purpose**: Isolates encryption and blind index contexts across tenants, realms, and entities
+- The namespace is embedded in the Wire Format V1 blob and used in AAD construction
+
 ## Blind Index
 
-When `blindIndex: true` is set on a schema field:
-- Deterministic HMAC-SHA-256 is computed from the serialized value + field context.
-- Stored in the `b` field of the encrypted sub-document.
-- Mongoose query middleware rewrites exact-match queries to target the blind index field.
+When `blindIndex: true` is set on a schema field, a deterministic blind index is computed:
+
+1. **HKDF-SHA256 key derivation**: A namespace-scoped HMAC key is derived from the master HMAC key:
+   ```
+   derivedKey = HKDF-SHA256(
+     IKM = masterHmacKey,
+     Salt = SHA-256(namespace.canonicalBytes()),
+     Info = "lcl-blind-index-v1",
+     L = 32
+   )
+   ```
+2. **HMAC-SHA256 computation**: The blind index is computed as:
+   ```
+   blindIndex = HMAC-SHA256(derivedKey, fieldName + ":" + normalize(value))
+   ```
+   where `normalize()` applies `trim().toLowerCase()` to string values.
+3. The result is stored as Base64URL (no padding) in the `b` field.
+4. Mongoose query middleware rewrites exact-match queries to target the blind index field.
+
+This two-step process (HKDF derivation + HMAC) ensures that blind indexes are isolated per namespace, preventing cross-tenant or cross-entity correlation.
 
 ## DEK Caching
 

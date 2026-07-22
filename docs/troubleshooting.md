@@ -6,7 +6,9 @@
 |-------|-------|----------|
 | KCV mismatch | Key corruption or wrong CMK | Verify CMK matches the one used to create the vault |
 | missing '_k' (kid) field | Malformed encrypted sub-document | Check document was encrypted by compatible library version |
-| Unsupported algorithm | Unknown `_a` value | Ensure both Java and Node.js use supported algorithms |
+| Unsupported algorithm | Unknown `_a` value or unknown Wire Format algorithm byte | Ensure both Java and Node.js use supported algorithms |
+| Unknown algorithm byte: 0x03 | SM4_GCM wire format detected | SM4-GCM encryption is not supported in Node.js (OpenSSL limitation); decryption from Java-encrypted documents will fail |
+| Ambiguous namespace | Namespace string has unexpected dot count | Use either `Entity#field` (shorthand) or `tenant.realm.entity#field` (full form) |
 | CMK must be 64 hex chars | Invalid CMK format | Provide a valid 64-character hex string (32 bytes) |
 | cmkVersion is required for unwrap | Missing key version metadata | Ensure wrap() was called with a provider that stores cmkVersion |
 | Azure/Alibaba SDK not installed | Missing optional dependency | `npm install @azure/keyvault-keys @azure/identity` or `npm install @alicloud/kms20160120 @alicloud/openapi-client` |
@@ -21,7 +23,7 @@
 
 ## Limitations
 
-- **SM4-GCM**: Deferred until OpenSSL 3.3+ is widely available
+- **SM4-GCM encryption**: Not available in Node.js (sm4-gcm cipher not in OpenSSL). Wire Format V1 parsing and registry support SM4_GCM (`0x03`) for forward compatibility.
 - **Range queries**: Not supported on encrypted fields (`$gt`, `$lt`, `$gte`, `$lte`)
 - **Full-text search**: Not supported on encrypted fields (`$text`)
 - **Regex queries**: Not supported on encrypted fields (pattern matching)

@@ -31,7 +31,7 @@ describe('FieldCryptoService', () => {
       expect(subDoc._k).toBe(activeKid);
       expect(subDoc._a).toBe('AES_256_GCM');
       expect(subDoc._t).toBe('STR');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
     });
 
     test('sub-document does not include blind index by default', () => {
@@ -156,7 +156,7 @@ describe('FieldCryptoService', () => {
       expect(subDoc._k).toBe(activeKid);
       expect(subDoc._a).toBe('AES_256_GCM');
       expect(subDoc._t).toBe('DOC');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
       expect(subDoc.b).toBeUndefined();
     });
 
@@ -194,7 +194,7 @@ describe('FieldCryptoService', () => {
       const subDoc = service.encryptField(arr, 'tags', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'COL' });
       expect(subDoc._e).toBe(1);
       expect(subDoc._t).toBe('COL');
-      expect(Buffer.isBuffer(subDoc.c)).toBe(true);
+      expect(typeof subDoc.c).toBe('string');
       expect(subDoc.b).toBeUndefined();
     });
 
@@ -215,14 +215,10 @@ describe('FieldCryptoService', () => {
 
   describe('structured type: MAP', () => {
     test('decrypt MAP sub-document returns plain object', () => {
-      // MAP uses same BSON encoding as DOC — encrypt as DOC, verify decrypt as MAP
       const obj = { key1: 'val1', key2: 'val2' };
-      const BsonCodec = require('../../../src/crypto/BsonCodec');
-      const bsonCodec = new BsonCodec();
-      const bsonBytes = bsonCodec.encodeDocument(obj);
-      const ciphertext = service._codec.encrypt(dek, bsonBytes, 'AES_256_GCM');
-
-      const subDoc = { _e: 1, _k: activeKid, _a: 'AES_256_GCM', _t: 'MAP', c: ciphertext };
+      // Encrypt as DOC then decrypt as MAP (same BSON encoding)
+      const subDoc = service.encryptField(obj, 'data', dek, hmacKey, activeKid, 'AES_256_GCM', { structuredType: 'DOC' });
+      subDoc._t = 'MAP'; // Override type marker to MAP
       const decrypted = service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM');
       expect(decrypted).toEqual(obj);
     });

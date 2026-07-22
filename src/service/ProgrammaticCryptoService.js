@@ -5,6 +5,7 @@ const BsonCodec = require('../crypto/BsonCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 const { FieldCryptoService, DecryptionError } = require('./FieldCryptoService');
+const Namespace = require('../namespace/Namespace');
 
 const DEFAULT_ALGORITHM = 'AES_256_GCM';
 
@@ -43,10 +44,11 @@ class ProgrammaticCryptoService {
    * @param {*} value          - Plaintext value to encrypt. Returns null/undefined as-is.
    * @param {string} entityName - Entity name used to resolve the active DEK (e.g., "User").
    * @param {string} [algorithm] - Override the default algorithm for this operation.
+   * @param {import('../namespace/Namespace')} [namespace] - Optional namespace override.
    * @returns {Promise<Object|null|undefined>} Sub-document { _e, _k, _a, _t, c, _entity }, or null/undefined if input is null/undefined.
    * @throws {Error} If entityName is missing.
    */
-  async encryptValue(value, entityName, algorithm) {
+  async encryptValue(value, entityName, algorithm, namespace) {
     if (value === null || value === undefined) {
       return value;
     }
@@ -56,16 +58,20 @@ class ProgrammaticCryptoService {
 
     const algo = algorithm || this._algorithm;
 
+    // Resolve active kid and DEK via keyVaultService
+    const vaultEntry = await this._keyVaultService.ensureVaultInitialized(entityName);
+    const dekVersion = vaultEntry.dekVersion || 1;
+
     // Validate algorithm early
     this._codec.getEncryptor(algo);
 
-    // Resolve active kid and DEK via keyVaultService
-    const vaultEntry = await this._keyVaultService.ensureVaultInitialized(entityName);
+    // Construct namespace from entityName if not provided
+    const ns = namespace || Namespace.parse(`${entityName}#${entityName}`);
 
     // Structured type detection: plain objects and arrays use BSON binary serialization
     if (Array.isArray(value)) {
       const plaintext = this._bsonCodec.encodeCollection(value);
-      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo);
+      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo, ns, dekVersion);
       return {
         _e: 1,
         _k: vaultEntry.activeKid,
@@ -84,7 +90,7 @@ class ProgrammaticCryptoService {
       value.constructor === Object
     ) {
       const plaintext = this._bsonCodec.encodeDocument(value);
-      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo);
+      const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo, ns, dekVersion);
       return {
         _e: 1,
         _k: vaultEntry.activeKid,
@@ -103,7 +109,7 @@ class ProgrammaticCryptoService {
     const typeMarker = this._serializer.resolveTypeMarker(value);
 
     // Encrypt
-    const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo);
+    const ciphertext = this._codec.encrypt(vaultEntry.dek, plaintext, algo, ns, dekVersion);
 
     // Build canonical sub-document
     // _entity is stored for standalone decryptValue calls (no entityName param needed)

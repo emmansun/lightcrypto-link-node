@@ -4,10 +4,14 @@ const crypto = require('crypto');
 const AesGcmEncryptor = require('./AesGcmEncryptor');
 const AesCbcEncryptor = require('./AesCbcEncryptor');
 const Sm4CbcEncryptor = require('./Sm4CbcEncryptor');
+const { fromName } = require('../format/AlgorithmId');
+const WireFormatEncoder = require('../format/WireFormatEncoder');
+const WireFormatDecoder = require('../format/WireFormatDecoder');
+const BlindIndexEngine = require('../blindindex/BlindIndexEngine');
 
 /**
  * Multi-algorithm cryptographic dispatch.
- * Provides encrypt/decrypt/computeKcv and HMAC-based blind index generation.
+ * Provides encrypt/decrypt with Wire Format V1 output, KCV, binding, and blind index.
  */
 class CryptoCodec {
   constructor() {
@@ -15,6 +19,7 @@ class CryptoCodec {
     this._encryptors.set('AES_256_GCM', new AesGcmEncryptor());
     this._encryptors.set('AES_256_CBC', new AesCbcEncryptor());
     this._encryptors.set('SM4_CBC', new Sm4CbcEncryptor());
+    this._blindIndexEngine = new BlindIndexEngine();
   }
 
   /**
@@ -32,29 +37,68 @@ class CryptoCodec {
   }
 
   /**
-   * Encrypt data with the specified algorithm.
+   * Encrypt data with Wire Format V1 output.
    * @param {Buffer} dek - Data encryption key
    * @param {Buffer} plaintext - Data to encrypt
    * @param {string} algorithm - Algorithm identifier
-   * @returns {Buffer} Encrypted data
+   * @param {import('../namespace/Namespace')} namespace - Namespace instance
+   * @param {number} dekVersion - DEK version (≥ 1)
+   * @returns {string} Base64URL-encoded Wire Format V1 blob
    */
-  encrypt(dek, plaintext, algorithm) {
+  encrypt(dek, plaintext, algorithm, namespace, dekVersion) {
     const encryptor = this.getEncryptor(algorithm);
     const key = this._adaptKey(dek, algorithm);
-    return encryptor.encrypt(key, plaintext);
+    const algInfo = fromName(algorithm);
+
+    // Generate IV externally
+    const iv = crypto.randomBytes(algInfo.ivLength);
+
+    // Build AAD for GCM modes
+    const aad = algInfo.isGcm
+      ? WireFormatEncoder.buildAad(algorithm, namespace, dekVersion)
+      : null;
+
+    // Encrypt: returns CT‖Tag (GCM) or padded CT (CBC)
+    const ciphertext = encryptor.encrypt(key, iv, plaintext, aad);
+
+    // Assemble Wire Format V1 Base64URL output
+    return WireFormatEncoder.encodeToBase64Url(algorithm, namespace, dekVersion, iv, ciphertext);
   }
 
   /**
-   * Decrypt data with the specified algorithm.
-   * @param {Buffer} dek - Data encryption key
-   * @param {Buffer} data - Encrypted data
-   * @param {string} algorithm - Algorithm identifier
+   * Decrypt a Wire Format V1 blob.
+   * @param {Buffer|string} dek - Data encryption key
+   * @param {string|Buffer} data - Base64URL string or Buffer (legacy)
+   * @param {string} [algorithm] - Default algorithm (overridden by Wire Format header)
    * @returns {Buffer} Decrypted plaintext
    */
   decrypt(dek, data, algorithm) {
-    const encryptor = this.getEncryptor(algorithm);
-    const key = this._adaptKey(dek, algorithm);
-    return encryptor.decrypt(key, data);
+    // Wire Format V1: Base64URL string
+    if (typeof data === 'string') {
+      const decoded = WireFormatDecoder.decodeFromBase64Url(data);
+      const encryptor = this.getEncryptor(decoded.algorithm);
+      const key = this._adaptKey(dek, decoded.algorithm);
+
+      // Reconstruct AAD for GCM modes
+      const algInfo = fromName(decoded.algorithm);
+      const aad = algInfo.isGcm
+        ? WireFormatDecoder.reconstructAad(decoded)
+        : null;
+
+      return encryptor.decrypt(key, decoded.iv, decoded.ciphertext, aad);
+    }
+
+    // Legacy Buffer format fallback (for backward compatibility during transition)
+    if (Buffer.isBuffer(data)) {
+      const encryptor = this.getEncryptor(algorithm);
+      const key = this._adaptKey(dek, algorithm);
+      const algInfo = fromName(algorithm);
+      const iv = data.subarray(0, algInfo.ivLength);
+      const ciphertext = data.subarray(algInfo.ivLength);
+      return encryptor.decrypt(key, iv, ciphertext, null);
+    }
+
+    throw new Error('Unsupported data format: expected Base64URL string or Buffer');
   }
 
   /**
@@ -86,20 +130,15 @@ class CryptoCodec {
   }
 
   /**
-   * Generate deterministic blind index for encrypted field queries.
-   * HMAC-SHA-256(hmacKey, fieldName:serializedValue) → Base64URL (no padding)
-   * @param {Buffer} hmacKey - HMAC key
+   * Generate deterministic blind index using BlindIndexEngine.
+   * @param {Buffer} hmacKey - Master HMAC key
+   * @param {import('../namespace/Namespace')} namespace - Namespace instance
    * @param {string} fieldName - Field name for isolation
-   * @param {string} serializedValue - Serialized field value
-   * @returns {string} Base64URL encoded blind index (43 chars for SHA-256)
+   * @param {string|Buffer} value - Value to index
+   * @returns {string} Base64URL encoded blind index
    */
-  generateBlindIndex(hmacKey, fieldName, serializedValue) {
-    const input = `${fieldName}:${serializedValue}`;
-    const hmac = crypto.createHmac('sha256', hmacKey);
-    hmac.update(input, 'utf8');
-    const digest = hmac.digest();
-    // Base64URL encoding without padding
-    return digest.toString('base64url');
+  generateBlindIndex(hmacKey, namespace, fieldName, value) {
+    return this._blindIndexEngine.compute(hmacKey, namespace, fieldName, value);
   }
 
   /**

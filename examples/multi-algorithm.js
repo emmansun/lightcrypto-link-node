@@ -25,7 +25,7 @@ const gcmDoc = fieldService.encryptField(
 console.log('AES-256-GCM:');
 console.log('  Algorithm:', gcmDoc._a);
 console.log('  Type:', gcmDoc._t);
-console.log('  Ciphertext length:', gcmDoc.c.length, 'bytes');
+console.log('  Ciphertext (Base64URL):', gcmDoc.c.length, 'chars');
 console.log('  Blind index:', gcmDoc.b);
 
 const gcmDecrypted = fieldService.decryptField(gcmDoc, aes256Key, hmacKey, 'AES_256_GCM');
@@ -37,7 +37,7 @@ const cbcDoc = fieldService.encryptField(
 );
 console.log('\nAES-256-CBC:');
 console.log('  Algorithm:', cbcDoc._a);
-console.log('  Ciphertext length:', cbcDoc.c.length, 'bytes');
+console.log('  Ciphertext (Base64URL):', cbcDoc.c.length, 'chars');
 
 const cbcDecrypted = fieldService.decryptField(cbcDoc, aes256Key, hmacKey, 'AES_256_CBC');
 console.log('  Decrypted:', cbcDecrypted);
@@ -49,7 +49,7 @@ const sm4Doc = fieldService.encryptField(
 );
 console.log('\nSM4-CBC:');
 console.log('  Algorithm:', sm4Doc._a);
-console.log('  Ciphertext length:', sm4Doc.c.length, 'bytes');
+console.log('  Ciphertext (Base64URL):', sm4Doc.c.length, 'chars');
 console.log('  Blind index:', sm4Doc.b);
 
 const sm4Decrypted = fieldService.decryptField(sm4Doc, sm4Key, hmacKey, 'SM4_CBC');
