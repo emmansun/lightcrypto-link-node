@@ -153,5 +153,8 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
+# Utility scripts (local-only)
+clean-lock.ps1
+
 # Qoder IDE configuration (personal)
 .qoder/
