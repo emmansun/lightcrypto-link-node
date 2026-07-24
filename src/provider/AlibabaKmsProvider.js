@@ -33,6 +33,8 @@ class AlibabaKmsProvider extends CmkProvider {
    * @param {string} [config.accessKeyId] - Access key ID
    * @param {string} [config.accessKeySecret] - Access key secret
    * @param {string} [config.publicKeyPem] - RSA public key in PEM format (for local asymmetric wrap)
+   * @param {Object} [config.client] - Pre-configured @alicloud/kms20160120 client instance.
+   *   When provided, region/endpoint/accessKeyId/accessKeySecret are ignored.
    */
   constructor(config) {
     super();
@@ -47,7 +49,7 @@ class AlibabaKmsProvider extends CmkProvider {
     this._accessKeyId = config.accessKeyId;
     this._accessKeySecret = config.accessKeySecret;
     this._publicKeyPem = config.publicKeyPem || null;
-    this._client = null;
+    this._client = config.client || null;
 
     if (this._keyType !== 'symmetric' && this._keyType !== 'asymmetric') {
       throw new Error(`AlibabaKmsProvider: invalid keyType '${this._keyType}'. Must be 'symmetric' or 'asymmetric'`);

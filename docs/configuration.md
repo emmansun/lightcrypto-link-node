@@ -95,7 +95,8 @@ const provider = new AzureKmsProvider({
   vaultUrl: 'https://vault.vault.azure.net',      // Vault URL
   cmkVersion: 'key-version-id',                   // Optional: auto-resolved if omitted
   publicKeyPem: '-----BEGIN PUBLIC KEY-----...',   // Optional: auto-resolved for local wrap
-  // credential: customCredential                  // Optional: custom Azure credential
+  // credential: customCredential,                 // Optional: custom Azure credential
+  // keyClient: preConfiguredKeyClient             // Optional: pre-configured KeyClient (ignores vaultUrl/credential)
 });
 ```
 
@@ -124,7 +125,8 @@ const provider = new AlibabaKmsProvider({
   accessKeyId: process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
   accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
   cmkVersion: 'key-version-id',                   // Optional: auto-resolved for asymmetric
-  publicKeyPem: '...'                             // Optional: auto-resolved for local asymmetric wrap
+  publicKeyPem: '...',                            // Optional: auto-resolved for local asymmetric wrap
+  // client: preConfiguredClient                   // Optional: pre-configured KMS client (ignores region/endpoint/accessKeyId/accessKeySecret)
 });
 ```
 
@@ -134,7 +136,7 @@ Install Alibaba SDK:
 npm install @alicloud/kms20160120 @alicloud/openapi-client
 ```
 
-> **Note:** Both cloud providers auto-resolve `cmkVersion` and `publicKeyPem` from the KMS API when not explicitly configured. Explicit configuration always takes precedence.
+> **Note:** Both cloud providers auto-resolve `cmkVersion` and `publicKeyPem` from the KMS API when not explicitly configured. Explicit configuration always takes precedence. You can also inject a pre-configured SDK client (`config.client` for Alibaba, `config.keyClient` for Azure) to customize proxy, timeout, retry, or credential chain settings.
 
 ## Encryption Mode
 

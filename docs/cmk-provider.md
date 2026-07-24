@@ -105,6 +105,17 @@ const provider = new AzureKmsProvider({
   publicKeyPem: '-----BEGIN...', // optional, auto-resolved if omitted
   credential: new DefaultAzureCredential() // optional
 });
+
+// Or inject a pre-configured KeyClient (vaultUrl/credential are ignored)
+const { KeyClient } = require('@azure/keyvault-keys');
+const customKeyClient = new KeyClient(vaultUrl, credential, {
+  retryOptions: { maxRetries: 5 },
+  // proxySettings, ...
+});
+const provider2 = new AzureKmsProvider({
+  keyName: 'my-key',
+  keyClient: customKeyClient
+});
 ```
 
 **Local wrap mode** (recommended):
@@ -150,6 +161,21 @@ const asymProvider = new AlibabaKmsProvider({
   region: 'cn-hangzhou',
   accessKeyId: '...',
   accessKeySecret: '...'
+});
+
+// Or inject a pre-configured client (region/endpoint/accessKeyId/accessKeySecret are ignored)
+const Kms20160120 = require('@alicloud/kms20160120');
+const OpenApi = require('@alicloud/openapi-client');
+const customClient = new Kms20160120.default(new OpenApi.Config({
+  accessKeyId: '...',
+  accessKeySecret: '...',
+  endpoint: 'kms.cn-hangzhou.aliyuncs.com',
+  // custom proxy, timeout, etc.
+}));
+const provider = new AlibabaKmsProvider({
+  keyId: 'key-abc123',
+  keyType: 'asymmetric',
+  client: customClient
 });
 ```
 

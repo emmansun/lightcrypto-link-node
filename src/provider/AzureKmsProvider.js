@@ -29,6 +29,8 @@ class AzureKmsProvider extends CmkProvider {
    * @param {string} [config.cmkVersion] - Key version string (if not provided, latest is resolved)
    * @param {string} [config.publicKeyPem] - RSA public key in PEM format (for local wrap)
    * @param {Object} [config.credential] - Azure credential (DefaultAzureCredential)
+   * @param {Object} [config.keyClient] - Pre-configured @azure/keyvault-keys KeyClient instance.
+   *   When provided, vaultUrl/credential are ignored.
    */
   constructor(config) {
     super();
@@ -40,7 +42,7 @@ class AzureKmsProvider extends CmkProvider {
     this._cmkVersion = config.cmkVersion || null;
     this._publicKeyPem = config.publicKeyPem || null;
     this._credential = config.credential || null;
-    this._keyClient = null;
+    this._keyClient = config.keyClient || null;
   }
 
   getProviderId() {
