@@ -97,8 +97,12 @@ class MongooseQueryTransformer extends QueryTransformer {
       await this._keyVaultService.ensureVaultInitialized(canonicalNs);
       const hmacKey = await this._keyVaultService.getActiveHmacKey(canonicalNs);
 
-      if (typeof value === 'object' && value !== null && !Buffer.isBuffer(value)) {
-        if (value.$in && Array.isArray(value.$in)) {
+      if (value === null) {
+        continue;
+      }
+
+      if (typeof value === 'object' && !Buffer.isBuffer(value)) {
+        if (value && value.$in && Array.isArray(value.$in)) {
           const indexes = value.$in.map(v => {
             const serialized = this._serializer.serializeToString(v);
             return this._codec.generateBlindIndex(hmacKey, ns, effectiveFieldName, serialized);
@@ -107,10 +111,18 @@ class MongooseQueryTransformer extends QueryTransformer {
           delete rewritten[fieldName];
           continue;
         }
-        if (value.$gt !== undefined || value.$lt !== undefined ||
-            value.$gte !== undefined || value.$lte !== undefined) {
-          continue;
+
+        const operators = Object.keys(value).filter(k => k.startsWith('$'));
+        if (operators.length > 0) {
+          throw new Error(
+            `Unsupported query operation '${operators[0]}' on encrypted field '${fieldName}'. ` +
+            'Only exact-match and $in queries are supported when blindIndex=true.'
+          );
         }
+
+        throw new Error(
+          `Unsupported query type '${value.constructor?.name || typeof value}' on encrypted field '${fieldName}'.`
+        );
       }
 
       const serialized = this._serializer.serializeToString(value);

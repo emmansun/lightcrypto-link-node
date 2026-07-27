@@ -110,11 +110,11 @@ describe('queryRewriter', () => {
     expect(resultIn['phone.b'].$in[0]).toBe(resultExact['phone.b']);
   });
 
-  test('does not rewrite range operators ($gt, $lt, $gte, $lte)', async () => {
+  test('rejects range operators ($gt, $lt, $gte, $lte)', async () => {
     const query = { phone: { $gt: '13800000000' } };
-    const result = await rewriteQuery(query, encryptedFields, codec, mockKeyVaultService, serializer);
-    expect(result.phone).toEqual({ $gt: '13800000000' });
-    expect(result['phone.b']).toBeUndefined();
+    await expect(
+      rewriteQuery(query, encryptedFields, codec, mockKeyVaultService, serializer)
+    ).rejects.toThrow(/unsupported query operation/i);
   });
 
   test('handles number values in query', async () => {

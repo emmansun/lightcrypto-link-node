@@ -67,9 +67,9 @@ class ProgrammaticCryptoService {
 
     // Ensure vault is initialized
     await this._keyVaultService.ensureVaultInitialized(canonicalNs);
-    const dekVersion = await this._keyVaultService.getActiveDekVersion(canonicalNs);
-    const activeKid = await this._keyVaultService.getActiveKid(canonicalNs);
-    const dek = await this._keyVaultService.getDek(activeKid);
+    const activeKeys = await this._keyVaultService.getActiveKeyPair(canonicalNs);
+    const dekVersion = activeKeys.activeDekVersion;
+    const dek = activeKeys.dek;
 
     // Validate algorithm early
     this._codec.getEncryptor(algo);

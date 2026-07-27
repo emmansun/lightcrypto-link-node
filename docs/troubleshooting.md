@@ -7,6 +7,7 @@
 | KCV mismatch | Key corruption or wrong CMK | Verify CMK matches the one used to create the vault |
 | missing '_k' (kid) field | Malformed encrypted sub-document | Check document was encrypted by compatible library version |
 | Unsupported algorithm | Unknown `_a` value or unknown Wire Format algorithm byte | Ensure both Java and Node.js use supported algorithms |
+| Unsupported query operation on encrypted field | Query uses operators like `$gt` / `$regex` on `encrypt: true` + `blindIndex: true` field | Use exact-match or `$in` only, or query a separate plaintext/search projection field |
 | Unknown algorithm byte: 0x03 | SM4_GCM wire format detected | SM4-GCM encryption is not supported in Node.js (OpenSSL limitation); decryption from Java-encrypted documents will fail |
 | Ambiguous namespace | Namespace string has unexpected dot count | Use either `Entity#field` (shorthand) or `tenant.realm.entity#field` (full form) |
 | CMK must be 64 hex chars | Invalid CMK format | Provide a valid 64-character hex string (32 bytes) |
@@ -24,10 +25,32 @@
 ## Limitations
 
 - **SM4-GCM encryption**: Not available in Node.js (sm4-gcm cipher not in OpenSSL). Wire Format V1 parsing and registry support SM4_GCM (`0x03`) for forward compatibility.
+- **Blind index query operators**: For encrypted fields with `blindIndex: true`, only exact-match and `$in` are supported. Other operators throw.
 - **Range queries**: Not supported on encrypted fields (`$gt`, `$lt`, `$gte`, `$lte`)
 - **Full-text search**: Not supported on encrypted fields (`$text`)
 - **Regex queries**: Not supported on encrypted fields (pattern matching)
 - **Java Long precision**: Use `mongoose-long` for Long fields exceeding JavaScript safe integer range
+
+## Query Operator Compatibility (Java-Aligned)
+
+Node.js follows Java LightCrypto-Link semantics for encrypted-field queries:
+
+- Supported on `blindIndex: true` fields:
+  - exact match (`{ field: value }`)
+  - `$in` (`{ field: { $in: [...] } }`)
+- Unsupported on encrypted fields (throws):
+  - `$gt`, `$lt`, `$gte`, `$lte`
+  - `$regex`, `$text`
+  - other operator-style predicates (`$ne`, `$nin`, etc.)
+
+If business logic requires unsupported predicates, create an additional non-sensitive query field
+for indexing/search while keeping the sensitive source field encrypted.
+
+## Lean Query Behavior
+
+The Mongoose plugin decrypts both normal Mongoose documents and lean/plain-object results from
+`find`/`findOne` hooks. If your application uses `lean()`, ensure encrypted payloads still include
+the standard `_e`, `_t`, and `c` fields so decryption can be detected and processed.
 
 ## SPI Adapter Configuration
 

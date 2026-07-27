@@ -21,9 +21,12 @@ describe('ProgrammaticCryptoService', () => {
 
     mockKeyVaultService = {
       ensureVaultInitialized: jest.fn().mockResolvedValue(undefined),
-      getActiveDekVersion: jest.fn().mockResolvedValue(1),
-      getActiveKid: jest.fn().mockResolvedValue(activeKid),
-      getDek: jest.fn().mockResolvedValue(dek),
+      getActiveKeyPair: jest.fn().mockResolvedValue({
+        activeDekVersion: 1,
+        activeKid,
+        dek,
+        hmacKey: crypto.randomBytes(32)
+      }),
       getDekByVersion: jest.fn().mockResolvedValue(dek),
       getActiveHmacKey: jest.fn().mockResolvedValue(crypto.randomBytes(32))
     };
@@ -139,10 +142,9 @@ describe('ProgrammaticCryptoService', () => {
       expect(mockKeyVaultService.ensureVaultInitialized).toHaveBeenCalledWith(CANONICAL_NS);
     });
 
-    test('calls getActiveDekVersion and getDek', async () => {
+    test('calls getActiveKeyPair', async () => {
       await svc.encryptValue('data', NS_USER_PHONE);
-      expect(mockKeyVaultService.getActiveDekVersion).toHaveBeenCalledWith(CANONICAL_NS);
-      expect(mockKeyVaultService.getDek).toHaveBeenCalledWith(activeKid);
+      expect(mockKeyVaultService.getActiveKeyPair).toHaveBeenCalledWith(CANONICAL_NS);
     });
   });
 

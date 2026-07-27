@@ -252,6 +252,56 @@ describe('KeyVaultService (unit)', () => {
       const kid = await svc.getActiveKid('unknown.namespace#field');
       expect(kid).toMatch(/^v1-/);
     });
+
+    test('getActiveHmacKey is namespace-scoped even when kids collide', async () => {
+      const svc = createService();
+      const originalGenerateKid = svc._generateKid.bind(svc);
+      let callCount = 0;
+      svc._generateKid = jest.fn((version) => {
+        callCount += 1;
+        if (version === 1 && callCount <= 2) return 'v1-c0ffee00';
+        return originalGenerateKid(version);
+      });
+
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      await svc.ensureVaultInitialized(NS_USER_EMAIL);
+
+      const key1 = await svc.getActiveHmacKey(NS_USER_PHONE);
+      const key2 = await svc.getActiveHmacKey(NS_USER_EMAIL);
+      expect(key1.equals(key2)).toBe(false);
+    });
+  });
+
+  describe('namespace-scoped key APIs', () => {
+    test('getActiveKeyPair returns active kid, version and key material', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+
+      const pair = await svc.getActiveKeyPair(NS_USER_PHONE);
+      expect(pair.activeKid).toMatch(/^v1-[0-9a-f]{8}$/);
+      expect(pair.activeDekVersion).toBe(1);
+      expect(pair.dek).toBeInstanceOf(Buffer);
+      expect(pair.hmacKey).toBeInstanceOf(Buffer);
+    });
+
+    test('getKeyPair resolves by namespace + kid', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      const kid = await svc.getActiveKid(NS_USER_PHONE);
+
+      const pair = await svc.getKeyPair(NS_USER_PHONE, kid);
+      expect(pair.dek).toBeInstanceOf(Buffer);
+      expect(pair.hmacKey).toBeInstanceOf(Buffer);
+    });
+
+    test('getKeyPair throws for kid that is not in the namespace', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      await svc.ensureVaultInitialized(NS_USER_EMAIL);
+
+      const kidPhone = await svc.getActiveKid(NS_USER_PHONE);
+      await expect(svc.getKeyPair(NS_USER_EMAIL, kidPhone)).rejects.toThrow(/Unknown kid for namespace/);
+    });
   });
 
   describe('rotateDek', () => {

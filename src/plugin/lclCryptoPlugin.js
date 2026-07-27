@@ -384,19 +384,36 @@ function lclCryptoPlugin(schema, options) {
     // Use a synchronous-ish approach: store for later check
     // Actually, Mongoose plugins can't be async, so we store and let user handle
     // But spec says "throw Error preventing initialization" — we use a different approach:
-    // run in pre-hook so it blocks properly
-    schema.pre('save', async function bootstrapCheck() {
-      if (schema._lclBootstrapPromise) {
-        const result = await schema._lclBootstrapPromise;
-        delete schema._lclBootstrapPromise;
-        schema._lclBootstrapResult = result;
-        if (result.status === 'FAILED') {
-          throw new Error(
-            `Bootstrap failed at phase '${result.failedPhase}': ${result.errorDetails}`
-          );
+    // Run bootstrap check on write and query operations so failures surface
+    // consistently before data access paths proceed.
+    const bootstrapGuardOps = [
+      'save',
+      'find',
+      'findOne',
+      'countDocuments',
+      'updateOne',
+      'updateMany',
+      'findOneAndUpdate',
+      'findOneAndReplace',
+      'findOneAndDelete',
+      'deleteOne',
+      'deleteMany'
+    ];
+
+    for (const op of bootstrapGuardOps) {
+      schema.pre(op, async function bootstrapCheck() {
+        if (schema._lclBootstrapPromise) {
+          const result = await schema._lclBootstrapPromise;
+          delete schema._lclBootstrapPromise;
+          schema._lclBootstrapResult = result;
+          if (result.status === 'FAILED') {
+            throw new Error(
+              `Bootstrap failed at phase '${result.failedPhase}': ${result.errorDetails}`
+            );
+          }
         }
-      }
-    });
+      });
+    }
   }
 
   // Resolve keyVaultService from options:
@@ -579,10 +596,11 @@ function lclCryptoPlugin(schema, options) {
       const fieldNamespace = Namespace.parseWithDefaults(`${resolvedEntityName}#${fieldConfig.customFieldName || pathName}`, tenant, realm);
       const canonicalNs = fieldNamespace.canonical();
       await keyVaultService.ensureVaultInitialized(canonicalNs);
-      const activeKid = await keyVaultService.getActiveKid(canonicalNs);
-      const dekVersion = await keyVaultService.getActiveDekVersion(canonicalNs);
-      const dek = await keyVaultService.getDek(activeKid);
-      const hmacKey = await keyVaultService.getHmacKey(activeKid);
+      const activeKeys = await keyVaultService.getActiveKeyPair(canonicalNs);
+      const activeKid = activeKeys.activeKid;
+      const dekVersion = activeKeys.activeDekVersion;
+      const dek = activeKeys.dek;
+      const hmacKey = activeKeys.hmacKey;
 
       // Nested encrypted field inside sub-document
       if (fieldConfig.isNested && !fieldConfig.isArrayElement) {
@@ -715,42 +733,76 @@ function lclCryptoPlugin(schema, options) {
     }
   });
 
-  /**
-   * Post-find hook: decrypt encrypted sub-documents after retrieval.
-   */
-  schema.post('find', async function (docs) {
-    if (!docs || docs.length === 0) return;
-
-    for (const doc of docs) {
-      await decryptDocument(doc);
+  async function decryptResult(result) {
+    if (!result) return;
+    if (Array.isArray(result)) {
+      for (const doc of result) {
+        await decryptDocument(doc);
+      }
+      return;
     }
-  });
+    await decryptDocument(result);
+  }
 
-  /**
-   * Post-findOne hook: decrypt encrypted sub-documents after single document retrieval.
-   */
-  schema.post('findOne', async function (doc) {
-    if (!doc) return;
-    await decryptDocument(doc);
-  });
+  const queryRewriteOps = [
+    'find',
+    'findOne',
+    'countDocuments',
+    'updateOne',
+    'updateMany',
+    'findOneAndUpdate',
+    'findOneAndReplace',
+    'findOneAndDelete',
+    'deleteOne',
+    'deleteMany'
+  ];
 
-  /**
-   * Pre-find hook: rewrite query for blind index support.
-   */
-  schema.pre('find', async function () {
-    const query = this.getQuery();
-    const rewrittenQuery = await queryTransformer.rewriteQuery(query, encryptedFields);
-    this.setQuery(rewrittenQuery);
-  });
+  for (const op of queryRewriteOps) {
+    schema.pre(op, async function () {
+      const query = this.getQuery();
+      const rewrittenQuery = await queryTransformer.rewriteQuery(query, encryptedFields);
+      this.setQuery(rewrittenQuery);
+    });
+  }
 
-  /**
-   * Pre-findOne hook: rewrite query for blind index support.
-   */
-  schema.pre('findOne', async function () {
-    const query = this.getQuery();
-    const rewrittenQuery = await queryTransformer.rewriteQuery(query, encryptedFields);
-    this.setQuery(rewrittenQuery);
-  });
+  const postDecryptOps = ['find', 'findOne', 'findOneAndUpdate', 'findOneAndReplace', 'findOneAndDelete'];
+  for (const op of postDecryptOps) {
+    schema.post(op, async function (result) {
+      await decryptResult(result);
+    });
+  }
+
+  function getPathValue(target, path) {
+    if (!target) return undefined;
+    if (typeof target.get === 'function') return target.get(path);
+
+    const parts = path.split('.');
+    let cursor = target;
+    for (const part of parts) {
+      if (cursor == null) return undefined;
+      cursor = cursor[part];
+    }
+    return cursor;
+  }
+
+  function setPathValue(target, path, value) {
+    if (!target) return;
+    if (typeof target.set === 'function') {
+      target.set(path, value);
+      return;
+    }
+
+    const parts = path.split('.');
+    let cursor = target;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const key = parts[i];
+      if (cursor[key] == null || typeof cursor[key] !== 'object') {
+        cursor[key] = {};
+      }
+      cursor = cursor[key];
+    }
+    cursor[parts[parts.length - 1]] = value;
+  }
 
   /**
    * Decrypt all encrypted fields in a document.
@@ -763,7 +815,7 @@ function lclCryptoPlugin(schema, options) {
     for (const [pathName, fieldConfig] of encryptedFields) {
       // Nested encrypted field inside sub-document
       if (fieldConfig.isNested && !fieldConfig.isArrayElement) {
-        const parentValue = doc.get(fieldConfig.parentPath);
+        const parentValue = getPathValue(doc, fieldConfig.parentPath);
         if (!parentValue || typeof parentValue !== 'object') continue;
 
         const leafValue = parentValue[fieldConfig.leafField];
@@ -776,7 +828,7 @@ function lclCryptoPlugin(schema, options) {
 
       // Nested encrypted field inside array elements (LIST_ITER + FIELD)
       if (fieldConfig.isNested && fieldConfig.isArrayElement) {
-        const arrayValue = doc.get(fieldConfig.parentPath);
+        const arrayValue = getPathValue(doc, fieldConfig.parentPath);
         if (!Array.isArray(arrayValue)) continue;
 
         for (const elem of arrayValue) {
@@ -790,7 +842,7 @@ function lclCryptoPlugin(schema, options) {
         continue;
       }
 
-      const fieldValue = doc.get(pathName);
+      const fieldValue = getPathValue(doc, pathName);
       if (!fieldValue) continue;
 
       // Element-level encrypted array: each element is an encrypted sub-document
@@ -806,7 +858,7 @@ function lclCryptoPlugin(schema, options) {
             const decrypted = await decryptSubDoc(elem);
             decryptedArray.push(decrypted);
           }
-          doc.set(pathName, decryptedArray);
+          setPathValue(doc, pathName, decryptedArray);
           continue;
         }
         // Non-encrypted array, skip
@@ -817,7 +869,7 @@ function lclCryptoPlugin(schema, options) {
       if (typeof fieldValue !== 'object' || fieldValue._e !== 1) continue;
 
       const decrypted = await decryptSubDoc(fieldValue);
-      doc.set(pathName, decrypted);
+      setPathValue(doc, pathName, decrypted);
     }
   }
 

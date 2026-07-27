@@ -90,12 +90,13 @@ describe('MongooseQueryTransformer', () => {
       expect(result).not.toHaveProperty('phone');
     });
 
-    test('skips range operators', async () => {
+    test('rejects range operators', async () => {
       const query = { phone: { $gt: '100' } };
       const fields = new Map([['phone', { encrypt: true, blindIndex: true }]]);
 
-      const result = await transformer.rewriteQuery(query, fields);
-      expect(result).toEqual({ phone: { $gt: '100' } });
+      await expect(transformer.rewriteQuery(query, fields)).rejects.toThrow(
+        /unsupported query operation/i
+      );
     });
 
     test('throws for encrypted field without blindIndex', async () => {
@@ -130,6 +131,15 @@ describe('MongooseQueryTransformer', () => {
         expect.any(Object),
         'phoneNumber',
         '123'
+      );
+    });
+
+    test('rejects object operators that cannot be represented by blind index lookup', async () => {
+      const query = { phone: { $ne: '123-456' } };
+      const fields = new Map([['phone', { encrypt: true, blindIndex: true }]]);
+
+      await expect(transformer.rewriteQuery(query, fields)).rejects.toThrow(
+        /unsupported|blindIndex|exact-match/i
       );
     });
   });

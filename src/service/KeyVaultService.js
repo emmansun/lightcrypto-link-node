@@ -68,6 +68,40 @@ class KeyVaultService {
   }
 
   /**
+   * Get active key pair metadata for a namespace.
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<{activeKid: string, activeDekVersion: number, dek: Buffer, hmacKey: Buffer}>}
+   */
+  async getActiveKeyPair(namespace) {
+    const entry = await this._ensureCached(namespace);
+    const pair = entry.resolvedKeys.get(entry.activeKid);
+    if (!pair) {
+      throw new Error(`Active key pair not found for namespace: ${namespace}`);
+    }
+    return {
+      activeKid: entry.activeKid,
+      activeDekVersion: entry.activeDekVersion,
+      dek: pair.dek,
+      hmacKey: pair.hmacKey
+    };
+  }
+
+  /**
+   * Get key pair for a specific namespace and kid.
+   * @param {string} namespace - Canonical namespace
+   * @param {string} kid - Key identifier
+   * @returns {Promise<{dek: Buffer, hmacKey: Buffer}>}
+   */
+  async getKeyPair(namespace, kid) {
+    const entry = await this._ensureCached(namespace);
+    const pair = entry.resolvedKeys.get(kid);
+    if (!pair) {
+      throw new Error(`Unknown kid for namespace ${namespace}: ${kid}`);
+    }
+    return pair;
+  }
+
+  /**
    * Get the unwrapped DEK for a specific kid.
    * Searches across all cached namespaces.
    * @param {string} kid - Key identifier
@@ -101,8 +135,8 @@ class KeyVaultService {
    * @returns {Promise<Buffer>}
    */
   async getActiveHmacKey(namespace) {
-    const kid = await this.getActiveKid(namespace);
-    return this.getHmacKey(kid);
+    const pair = await this.getActiveKeyPair(namespace);
+    return pair.hmacKey;
   }
 
   /**

@@ -118,7 +118,26 @@ const result = await User.findOne({ phone: '13800138000' });
 
 // NOTE: Querying encrypted fields WITHOUT blindIndex throws an error.
 // Enable blindIndex: true on queryable fields, or use a backfill migration.
+
+// NOTE: For encrypted fields with blindIndex=true, only exact-match and $in are supported.
+// The SDK throws for range/pattern operators such as $gt/$lt/$gte/$lte/$regex/$text.
 ```
+
+### Blind Index Query Semantics
+
+To keep behavior aligned with Java LightCrypto-Link and avoid silent query mismatches:
+
+- Supported on `encrypt: true` + `blindIndex: true` fields:
+  - exact match (`{ phone: '13800138000' }`)
+  - `$in` (`{ phone: { $in: ['13800138000', '13900139000'] } }`)
+- Unsupported (throws):
+  - range (`$gt`, `$lt`, `$gte`, `$lte`)
+  - pattern/full-text (`$regex`, `$text`)
+  - other operator-style predicates on encrypted fields
+
+If you need range or fuzzy search, model a separate plaintext/search-friendly projection field
+(for example, masked prefix, normalized keyword tokens, or external search index), and keep
+the sensitive field encrypted.
 
 ## Schema Options
 
@@ -171,6 +190,7 @@ When introducing encryption to an existing system with plaintext MongoDB data:
 - **Reads**: Plaintext historical values pass through safely (only encrypted sub-documents are decrypted).
 - **Writes**: Re-saving a document automatically encrypts plaintext fields (lazy migration).
 - **Queries**: Blind index queries only match encrypted records. Querying an encrypted field without `blindIndex: true` throws an error.
+- **Operator constraints**: Blind index queries support exact-match and `$in` only. Unsupported operators throw explicit errors.
 
 Use the backfill runner to migrate all historical records:
 

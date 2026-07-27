@@ -427,3 +427,117 @@ describe('lclCryptoPlugin - resolveMode / validation', () => {
     expect(tagsConfig.mode).toBe('WHOLE_ARRAY');
   });
 });
+
+describe('lclCryptoPlugin - regression guards', () => {
+  test('findOne post hook tolerates lean/plain-object documents', async () => {
+    const { lclCryptoPlugin } = require('../../../src/plugin/lclCryptoPlugin');
+
+    const definition = {
+      phone: { type: String, encrypt: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const mockKeyVaultService = {
+      ensureVaultInitialized: jest.fn(),
+      getDekByVersion: jest.fn(),
+      getActiveHmacKey: jest.fn()
+    };
+
+    schema.plugin(lclCryptoPlugin, {
+      keyVaultService: mockKeyVaultService,
+      entityName: 'User'
+    });
+
+    const leanDoc = { _id: new mongoose.Types.ObjectId(), phone: 'not-encrypted' };
+
+    const findOnePosts = schema.s.hooks._posts.get('findOne');
+    expect(Array.isArray(findOnePosts)).toBe(true);
+    expect(findOnePosts.length).toBeGreaterThan(0);
+
+    await expect(findOnePosts[0].fn(leanDoc)).resolves.toBeUndefined();
+  });
+
+  test('registers query rewrite hooks for update/delete/count operations', () => {
+    const { lclCryptoPlugin } = require('../../../src/plugin/lclCryptoPlugin');
+
+    const definition = {
+      phone: { type: String, encrypt: true, blindIndex: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const mockKeyVaultService = {
+      ensureVaultInitialized: jest.fn(),
+      getActiveHmacKey: jest.fn().mockResolvedValue(Buffer.alloc(32))
+    };
+
+    schema.plugin(lclCryptoPlugin, {
+      keyVaultService: mockKeyVaultService,
+      entityName: 'User'
+    });
+
+    const ops = [
+      'find',
+      'findOne',
+      'countDocuments',
+      'updateOne',
+      'updateMany',
+      'findOneAndUpdate',
+      'findOneAndReplace',
+      'findOneAndDelete',
+      'deleteOne',
+      'deleteMany'
+    ];
+
+    for (const op of ops) {
+      const pres = schema.s.hooks._pres.get(op);
+      expect(Array.isArray(pres)).toBe(true);
+      expect(pres.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('registers bootstrap guard hooks for query/write operations when bootstrap is enabled', () => {
+    const { lclCryptoPlugin } = require('../../../src/plugin/lclCryptoPlugin');
+
+    const definition = {
+      phone: { type: String, encrypt: true, blindIndex: true }
+    };
+    const processed = prepareEncryptedSchema(definition);
+    const schema = new mongoose.Schema(processed);
+
+    const mockKeyVaultService = {
+      ensureVaultInitialized: jest.fn(),
+      getActiveHmacKey: jest.fn().mockResolvedValue(Buffer.alloc(32))
+    };
+
+    schema.plugin(lclCryptoPlugin, {
+      keyVaultService: mockKeyVaultService,
+      bootstrap: true,
+      cmkProvider: {
+        getProviderId: () => 'test',
+        getPublicReference: () => 'ref'
+      }
+    });
+
+    const ops = [
+      'save',
+      'find',
+      'findOne',
+      'countDocuments',
+      'updateOne',
+      'updateMany',
+      'findOneAndUpdate',
+      'findOneAndReplace',
+      'findOneAndDelete',
+      'deleteOne',
+      'deleteMany'
+    ];
+
+    for (const op of ops) {
+      const pres = schema.s.hooks._pres.get(op);
+      expect(Array.isArray(pres)).toBe(true);
+      expect(pres.length).toBeGreaterThan(0);
+    }
+  });
+});
