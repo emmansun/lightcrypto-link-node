@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **KMS provider custom client injection**:
+  - `AzureKmsProvider` now supports custom client injection for advanced runtime control and testing.
+  - `AlibabaKmsProvider` now supports custom client injection for advanced runtime control and testing.
+
+### Changed
+- **Java-aligned encrypted query semantics**:
+  - For encrypted fields with `blindIndex: true`, query rewriting now supports exact match and `$in` only.
+  - Unsupported operator-style predicates (for example `$gt`, `$lt`, `$gte`, `$lte`, `$regex`, `$text`, `$ne`, `$nin`) now fail fast with explicit errors instead of being silently transformed.
+- **Query rewrite coverage expanded in Mongoose plugin**:
+  - Blind-index rewrite middleware now also covers `countDocuments`, `updateOne`, `updateMany`, `findOneAndUpdate`, `findOneAndReplace`, `findOneAndDelete`, `deleteOne`, and `deleteMany` (in addition to `find`/`findOne`).
+- **Bootstrap guard coverage expanded**:
+  - Bootstrap readiness checks are now enforced on common read/write/delete entry points, not just `save`.
+- **Dependencies / tooling**:
+  - Bumped `@alicloud/kms20160120` from `3.0.0` to `3.1.0`.
+  - Updated `github/codeql-action/upload-sarif`.
+
+### Fixed
+- **Namespace-scoped key retrieval safety**:
+  - Key resolution on active encryption paths now uses namespace-scoped retrieval (`getActiveKeyPair`) to avoid potential cross-namespace ambiguity from kid-only lookups.
+- **Lean/plain-object decrypt compatibility**:
+  - Post-query decrypt flow now handles both Mongoose documents and lean/plain-object results without `doc.get`/`doc.set` assumptions.
+- **Documentation consistency**:
+  - Clarified blind-index operator constraints and Java-aligned behavior in README and troubleshooting docs.
+
 ## [1.1.0] - 2026-07-22
 
 ### Added
