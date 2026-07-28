@@ -24,4 +24,4 @@
 
 - [x] 4.1 更新 README.md 添加 ESM 导入用法示例（`import { AesGcmEncryptor } from 'lightcrypto-link-node'`）
 - [x] 4.2 运行 `npm run lint` 确认无 lint 错误
-- [ ] 4.3 运行完整测试套件 `npm test` 确认全部通过
+- [x] 4.3 运行完整测试套件 `npm test` 确认全部通过
