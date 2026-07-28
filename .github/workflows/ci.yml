@@ -50,6 +50,14 @@ jobs:
     - name: Run linter
       run: npm run lint
 
+    - name: Run ESM import tests
+      if: matrix.node-version == '22.x' && matrix.mongoose-version == 9
+      run: npm run test:esm
+
+    - name: Run ESM packed artifact tests
+      if: matrix.node-version == '22.x' && matrix.mongoose-version == 9
+      run: npm run test:esm:pack
+
     - name: Run unit tests
       run: npm run test:unit
 

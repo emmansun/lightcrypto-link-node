@@ -4,12 +4,12 @@
 
 ## What Changes
 
-- 在 `package.json` 中添加 `exports` 字段，通过条件导出（`import` / `require`）同时暴露 ESM 和 CJS 入口
-- 新增 ESM 包装入口文件（`src/index.mjs` 或 `dist/esm/index.mjs`），re-export 所有公共 API 为命名导出
+- 在 `package.json` 中添加 `exports` 字段，通过条件导出（`import` / `require`）同时暴露 ESM 和 CJS 入口，并将 `default` 指向 ESM wrapper
+- 新增 ESM 包装入口文件（`src/index.mjs`），re-export `src/index.js` 的全部公共导出为命名导出
 - 保留现有 CJS 源码（`src/index.js`）不变，确保向后兼容
-- 添加 `module` 字段指向 ESM 入口，方便打包工具识别
+- 保留 `main` 与新增 `module` 字段指向 ESM 入口，兼容不同打包工具解析策略
 - 更新 `files` 字段确保 ESM 入口被包含在发布产物中
-- 添加 ESM 导入的单元测试验证命名导出和默认导出均可用
+- 添加 ESM 导入验证测试与 CJS/ESM 导出一致性测试，并补充 `npm pack` 后包名导入验证
 
 ## Capabilities
 
@@ -24,7 +24,7 @@
 
 - **package.json**: 新增 `exports`、`module` 字段，更新 `files`
 - **新增文件**: ESM 入口包装文件（`src/index.mjs`）
-- **测试**: 新增 ESM 导入验证测试
+- **测试**: 新增 ESM 导入验证测试、导出一致性测试、打包产物导入验证测试
 - **依赖**: 无新依赖
 - **向后兼容**: CJS 消费者无任何变化（`require('lightcrypto-link-node')` 行为不变）
 - **CI/发布**: 无需构建步骤（采用 wrapper 方案而非编译方案）

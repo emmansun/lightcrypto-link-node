@@ -64,6 +64,15 @@ npm install @azure/keyvault-keys @azure/identity
 npm install @alicloud/kms20160120 @alicloud/openapi-client
 ```
 
+ESM usage:
+
+```javascript
+import { LocalCmkProvider, AesGcmEncryptor } from 'lightcrypto-link-node';
+
+const cmkProvider = new LocalCmkProvider('your-64-char-hex-cmk-key');
+const encryptor = new AesGcmEncryptor();
+```
+
 ### 2. Configure
 
 Local symmetric CMK:

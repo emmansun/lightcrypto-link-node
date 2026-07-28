@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const lib = require('../../src/index');
 
 describe('index.js - public API exports', () => {
@@ -280,6 +282,25 @@ describe('index.js - public API exports', () => {
     test('BsonStructuredValueCodec can be instantiated', () => {
       const codec = new lib.BsonStructuredValueCodec();
       expect(codec).toBeInstanceOf(lib.StructuredValueCodec);
+    });
+  });
+
+  describe('CJS/ESM export consistency', () => {
+    test('ESM named export list matches CJS keys exactly', () => {
+      const cjsKeys = Object.keys(lib).sort();
+      const esmFile = path.resolve(__dirname, '../../src/index.mjs');
+      const source = fs.readFileSync(esmFile, 'utf8');
+
+      const match = source.match(/export const \{([\s\S]*?)\} = cjs;/m);
+      expect(match).not.toBeNull();
+
+      const esmKeys = match[1]
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .sort();
+
+      expect(esmKeys).toEqual(cjsKeys);
     });
   });
 });

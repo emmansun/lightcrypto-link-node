@@ -4,8 +4,8 @@
 The package SHALL provide an ESM entry point that exposes all public API symbols as named exports. Consumers using `import { X } from 'lightcrypto-link-node'` SHALL receive the same constructor/function reference as `require('lightcrypto-link-node').X`.
 
 #### Scenario: Named import of all public API symbols
-- **WHEN** an ESM consumer executes `import { CryptoCodec, BsonCodec, AesGcmEncryptor, AesCbcEncryptor, Sm4CbcEncryptor, SymmetricEncryptor, TypeSerializer, TypeDeserializer, KeyVaultService, FieldCryptoService, FatalCryptoError, DecryptionError, ProgrammaticCryptoService, CmkProvider, LocalCmkProvider, AzureKmsProvider, AlibabaKmsProvider, LclConfig, lclCryptoPlugin, prepareEncryptedSchema, rewriteQuery, getKeyVaultModel } from 'lightcrypto-link-node'`
-- **THEN** each imported symbol SHALL be defined and have the same type (function/class) as the corresponding property on the CJS `module.exports` object
+- **WHEN** an ESM consumer imports package named exports and compares them with keys from `require('lightcrypto-link-node')`
+- **THEN** every key in the CJS `module.exports` object SHALL be available as an ESM named export, and each corresponding value SHALL have the same type
 
 #### Scenario: Named export is identical to CJS export
 - **WHEN** an ESM consumer imports `CryptoCodec` via named import and a CJS consumer requires `CryptoCodec` via `require('lightcrypto-link-node').CryptoCodec`
@@ -16,7 +16,7 @@ The package SHALL provide a default export containing the complete public API ob
 
 #### Scenario: Default import contains all API symbols
 - **WHEN** an ESM consumer executes `import lib from 'lightcrypto-link-node'`
-- **THEN** `lib` SHALL be an object containing all 22 public API symbols as properties
+- **THEN** `lib` SHALL be an object containing exactly the same property set as CJS `module.exports`
 
 #### Scenario: Default export matches CJS module.exports
 - **WHEN** comparing the ESM default export with `require('lightcrypto-link-node')`
@@ -44,9 +44,13 @@ The `package.json` SHALL use the `exports` field with `import` and `require` con
 - **WHEN** Node.js resolves `require('lightcrypto-link-node')` in a CJS context
 - **THEN** it SHALL load `src/index.js` (the existing CJS entry)
 
-#### Scenario: Fallback for legacy bundlers
-- **WHEN** a bundler that does not support `exports` field resolves the package
-- **THEN** it SHALL fall back to `main` (CJS) or `module` (ESM) fields
+#### Scenario: Default condition aligns with ESM entry
+- **WHEN** a resolver selects the `default` condition from `exports` for package root `.`
+- **THEN** it SHALL resolve to the same ESM wrapper target as the `import` condition
+
+#### Scenario: Legacy tooling compatibility is preserved
+- **WHEN** a tool ignores `exports` and reads legacy fields
+- **THEN** `main` and `module` fields SHALL still be present for best-effort compatibility
 
 ### Requirement: Export consistency guarantee
 The ESM wrapper SHALL export exactly the same set of symbols as the CJS entry point. Adding a new public API symbol to `src/index.js` without updating `src/index.mjs` SHALL be detected by automated tests.
