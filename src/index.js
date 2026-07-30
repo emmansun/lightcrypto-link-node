@@ -74,6 +74,9 @@ const QueryTransformer = require('./spi/QueryTransformer');
 const VaultStore = require('./spi/VaultStore');
 const { validateVaultDocument, createVaultDocument } = require('./spi/VaultDocument');
 const OptimisticLockError = require('./spi/OptimisticLockError');
+const DocumentRewriteStore = require('./spi/DocumentRewriteStore');
+const { createRawDocument } = require('./spi/RawDocument');
+const { createScanOptions } = require('./spi/ScanOptions');
 
 // Adapter layer
 const MongoVaultStore = require('./adapter/MongoVaultStore');
@@ -82,6 +85,10 @@ const MongooseStorageAdapter = require('./adapter/MongooseStorageAdapter');
 const MongooseDocumentAccessor = require('./adapter/MongooseDocumentAccessor');
 const BsonStructuredValueCodec = require('./adapter/BsonStructuredValueCodec');
 const MongooseQueryTransformer = require('./adapter/MongooseQueryTransformer');
+const MongoDocumentRewriteStore = require('./adapter/MongoDocumentRewriteStore');
+
+// DEK Re-Encryption
+const DekReEncryptionService = require('./service/DekReEncryptionService');
 
 module.exports = {
   // Crypto
@@ -110,6 +117,7 @@ module.exports = {
   KeyVaultService,
   FieldCryptoService,
   ProgrammaticCryptoService,
+  DekReEncryptionService,
 
   // Error taxonomy
   LclCryptoError,
@@ -138,6 +146,9 @@ module.exports = {
   DocumentAccessor,
   StructuredValueCodec,
   QueryTransformer,
+  DocumentRewriteStore,
+  createRawDocument,
+  createScanOptions,
 
   // Vault
   VaultStore,
@@ -152,6 +163,7 @@ module.exports = {
   MongooseDocumentAccessor,
   BsonStructuredValueCodec,
   MongooseQueryTransformer,
+  MongoDocumentRewriteStore,
 
   // Bootstrap
   BootstrapEngine,

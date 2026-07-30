@@ -459,4 +459,80 @@ describe('KeyVaultService (unit)', () => {
       expect(stored).not.toBeNull();
     });
   });
+
+  describe('RETIRED lifecycle', () => {
+    test('markKeysRetired transitions ROTATED → RETIRED', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      const v1Kid = await svc.getActiveKid(NS_USER_PHONE);
+
+      // Rotate: v1 becomes ROTATED, v2 becomes ACTIVE
+      await svc.rotateDek(NS_USER_PHONE);
+
+      // Mark v1 as retired
+      await svc.markKeysRetired(NS_USER_PHONE, [v1Kid]);
+
+      // Verify vault document
+      const vaultDoc = await vaultStore.load(NS_USER_PHONE);
+      const v1Entry = vaultDoc.keys.find(k => k.kid === v1Kid);
+      expect(v1Entry.status).toBe('RETIRED');
+    });
+
+    test('markKeysRetired skips ACTIVE keys without error', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      const activeKid = await svc.getActiveKid(NS_USER_PHONE);
+
+      // Try to retire the ACTIVE key — should be no-op
+      await svc.markKeysRetired(NS_USER_PHONE, [activeKid]);
+
+      const vaultDoc = await vaultStore.load(NS_USER_PHONE);
+      const entry = vaultDoc.keys.find(k => k.kid === activeKid);
+      expect(entry.status).toBe('ACTIVE');
+    });
+
+    test('getDekByVersion throws KeyResolutionError for RETIRED key', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      const v1Kid = await svc.getActiveKid(NS_USER_PHONE);
+
+      // Rotate and retire v1
+      await svc.rotateDek(NS_USER_PHONE);
+      await svc.markKeysRetired(NS_USER_PHONE, [v1Kid]);
+
+      // Flush cache to force reload
+      svc.flushCache();
+
+      // getDekByVersion for version 1 should throw
+      await expect(svc.getDekByVersion(NS_USER_PHONE, 1)).rejects.toThrow(KeyResolutionError);
+      await expect(svc.getDekByVersion(NS_USER_PHONE, 1)).rejects.toThrow('retired');
+    });
+
+    test('pruneRetiredKeys removes RETIRED entries', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+      const v1Kid = await svc.getActiveKid(NS_USER_PHONE);
+
+      // Rotate and retire v1
+      await svc.rotateDek(NS_USER_PHONE);
+      await svc.markKeysRetired(NS_USER_PHONE, [v1Kid]);
+
+      // Prune
+      const prunedCount = await svc.pruneRetiredKeys(NS_USER_PHONE);
+      expect(prunedCount).toBe(1);
+
+      // Verify vault document no longer has v1
+      const vaultDoc = await vaultStore.load(NS_USER_PHONE);
+      expect(vaultDoc.keys).toHaveLength(1);
+      expect(vaultDoc.keys.find(k => k.kid === v1Kid)).toBeUndefined();
+    });
+
+    test('pruneRetiredKeys returns 0 when no RETIRED entries', async () => {
+      const svc = createService();
+      await svc.ensureVaultInitialized(NS_USER_PHONE);
+
+      const prunedCount = await svc.pruneRetiredKeys(NS_USER_PHONE);
+      expect(prunedCount).toBe(0);
+    });
+  });
 });

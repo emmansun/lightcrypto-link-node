@@ -158,6 +158,7 @@ class KeyVaultService {
    * @param {string} namespace - Canonical namespace
    * @param {number} dekVersion - DEK version number
    * @returns {Promise<Buffer>}
+   * @throws {KeyResolutionError} If the key entry has been retired
    */
   async getDekByVersion(namespace, dekVersion) {
     const entry = await this._ensureCachedForDecrypt(namespace);
@@ -168,6 +169,14 @@ class KeyVaultService {
         dekVersion,
         vaultExists: true
       });
+    }
+    // Check if the key has been retired
+    const kid = entry.versionToKid.get(dekVersion);
+    if (kid && entry.keyStatuses.get(kid) === 'RETIRED') {
+      throw new KeyResolutionError(
+        `Key for namespace ${namespace} with dekVersion ${dekVersion} has been retired`,
+        { namespace, dekVersion, kid, vaultExists: true }
+      );
     }
     return pair.dek;
   }
@@ -510,6 +519,83 @@ class KeyVaultService {
   }
 
   /**
+   * Mark specified ROTATED key entries as RETIRED.
+   * Only ROTATED keys can be retired; ACTIVE keys are skipped without error.
+   * @param {string} namespace - Canonical namespace
+   * @param {string[]} kids - Array of key identifiers to retire
+   * @returns {Promise<void>}
+   */
+  async markKeysRetired(namespace, kids) {
+    const vaultDoc = await this._vaultStore.load(namespace);
+    if (!vaultDoc) {
+      throw new Error(`Vault not found for namespace: ${namespace}`);
+    }
+
+    const kidSet = new Set(kids);
+    let modified = false;
+
+    for (const keyEntry of vaultDoc.keys) {
+      if (kidSet.has(keyEntry.kid) && keyEntry.status === 'ROTATED') {
+        keyEntry.status = 'RETIRED';
+        modified = true;
+      }
+    }
+
+    if (!modified) return;
+
+    vaultDoc.v = vaultDoc.v + 1;
+    vaultDoc.updatedAt = new Date();
+
+    try {
+      await this._vaultStore.rotate(vaultDoc);
+    } catch (e) {
+      if (e.name === 'OptimisticLockError') {
+        throw new Error(
+          `Concurrent modification detected during markKeysRetired for namespace: ${namespace}. Please retry.`
+        );
+      }
+      throw e;
+    }
+
+    // Reload cache
+    await this._populateCache(vaultDoc, namespace);
+  }
+
+  /**
+   * Permanently remove all RETIRED key entries from the vault document.
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<number>} Number of pruned entries
+   */
+  async pruneRetiredKeys(namespace) {
+    const vaultDoc = await this._vaultStore.load(namespace);
+    if (!vaultDoc) {
+      throw new Error(`Vault not found for namespace: ${namespace}`);
+    }
+
+    const retiredCount = vaultDoc.keys.filter(k => k.status === 'RETIRED').length;
+    if (retiredCount === 0) return 0;
+
+    vaultDoc.keys = vaultDoc.keys.filter(k => k.status !== 'RETIRED');
+    vaultDoc.v = vaultDoc.v + 1;
+    vaultDoc.updatedAt = new Date();
+
+    try {
+      await this._vaultStore.rotate(vaultDoc);
+    } catch (e) {
+      if (e.name === 'OptimisticLockError') {
+        throw new Error(
+          `Concurrent modification detected during pruneRetiredKeys for namespace: ${namespace}. Please retry.`
+        );
+      }
+      throw e;
+    }
+
+    // Reload cache
+    await this._populateCache(vaultDoc, namespace);
+    return retiredCount;
+  }
+
+  /**
    * Flush the DEK cache, securely destroying key material.
    */
   flushCache() {
@@ -597,6 +683,8 @@ class KeyVaultService {
 
     const resolvedKeys = new Map();
     const resolvedKeysByVersion = new Map();
+    const keyStatuses = new Map();
+    const versionToKid = new Map();
     let activeKid = null;
     let activeDekVersion = 0;
     let activeCount = 0;
@@ -645,6 +733,8 @@ class KeyVaultService {
 
       const version = this._parseVersion(keyEntry.kid);
       resolvedKeysByVersion.set(version, pair);
+      keyStatuses.set(keyEntry.kid, keyEntry.status);
+      versionToKid.set(version, keyEntry.kid);
 
       if (keyEntry.status === 'ACTIVE') {
         activeKid = keyEntry.kid;
@@ -665,6 +755,8 @@ class KeyVaultService {
       activeDekVersion,
       resolvedKeys,
       resolvedKeysByVersion,
+      keyStatuses,
+      versionToKid,
       expiresAt: Date.now() + this._cacheTtl
     };
 
