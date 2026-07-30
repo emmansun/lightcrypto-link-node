@@ -5,6 +5,7 @@ const CryptoCodec = require('../crypto/CryptoCodec');
 const NoOpEventBus = require('../event/NoOpEventBus');
 const LclEvent = require('../event/LclEvent');
 const EventTier = require('../event/EventTier');
+const KeyResolutionError = require('../error/KeyResolutionError');
 
 const DEFAULT_CACHE_TTL = 3600000; // 1 hour
 
@@ -49,7 +50,7 @@ class KeyVaultService {
       vaultDoc = await this._initializeVault(namespace);
     }
 
-    await this._verifyAndLoadKeys(vaultDoc, namespace);
+    await this._populateCache(vaultDoc, namespace);
   }
 
   /**
@@ -58,7 +59,7 @@ class KeyVaultService {
    * @returns {Promise<string>}
    */
   async getActiveKid(namespace) {
-    const entry = await this._ensureCached(namespace);
+    const entry = await this._ensureCachedForEncrypt(namespace);
     return entry.activeKid;
   }
 
@@ -68,7 +69,7 @@ class KeyVaultService {
    * @returns {Promise<number>}
    */
   async getActiveDekVersion(namespace) {
-    const entry = await this._ensureCached(namespace);
+    const entry = await this._ensureCachedForEncrypt(namespace);
     return entry.activeDekVersion;
   }
 
@@ -78,10 +79,14 @@ class KeyVaultService {
    * @returns {Promise<{activeKid: string, activeDekVersion: number, dek: Buffer, hmacKey: Buffer}>}
    */
   async getActiveKeyPair(namespace) {
-    const entry = await this._ensureCached(namespace);
+    const entry = await this._ensureCachedForEncrypt(namespace);
     const pair = entry.resolvedKeys.get(entry.activeKid);
     if (!pair) {
-      throw new Error(`Active key pair not found for namespace: ${namespace}`);
+      throw new KeyResolutionError(`Active key pair not found for namespace: ${namespace}`, {
+        namespace,
+        kid: entry.activeKid,
+        vaultExists: true
+      });
     }
     return {
       activeKid: entry.activeKid,
@@ -98,10 +103,14 @@ class KeyVaultService {
    * @returns {Promise<{dek: Buffer, hmacKey: Buffer}>}
    */
   async getKeyPair(namespace, kid) {
-    const entry = await this._ensureCached(namespace);
+    const entry = await this._ensureCachedForDecrypt(namespace);
     const pair = entry.resolvedKeys.get(kid);
     if (!pair) {
-      throw new Error(`Unknown kid for namespace ${namespace}: ${kid}`);
+      throw new KeyResolutionError(`Unknown kid for namespace ${namespace}: ${kid}`, {
+        namespace,
+        kid,
+        vaultExists: true
+      });
     }
     return pair;
   }
@@ -117,7 +126,7 @@ class KeyVaultService {
       const pair = entry.resolvedKeys.get(kid);
       if (pair) return pair.dek;
     }
-    throw new Error(`Unknown kid: ${kid}`);
+    throw new KeyResolutionError(`Unknown kid: ${kid}`, { kid, vaultExists: true });
   }
 
   /**
@@ -131,7 +140,7 @@ class KeyVaultService {
       const pair = entry.resolvedKeys.get(kid);
       if (pair) return pair.hmacKey;
     }
-    throw new Error(`Unknown kid: ${kid}`);
+    throw new KeyResolutionError(`Unknown kid: ${kid}`, { kid, vaultExists: true });
   }
 
   /**
@@ -151,10 +160,14 @@ class KeyVaultService {
    * @returns {Promise<Buffer>}
    */
   async getDekByVersion(namespace, dekVersion) {
-    const entry = await this._ensureCached(namespace);
+    const entry = await this._ensureCachedForDecrypt(namespace);
     const pair = entry.resolvedKeysByVersion.get(dekVersion);
     if (!pair) {
-      throw new Error(`No key found for namespace ${namespace} with dekVersion ${dekVersion}`);
+      throw new KeyResolutionError(`No key found for namespace ${namespace} with dekVersion ${dekVersion}`, {
+        namespace,
+        dekVersion,
+        vaultExists: true
+      });
     }
     return pair.dek;
   }
@@ -232,7 +245,7 @@ class KeyVaultService {
     }
 
     // Reload keys into cache
-    await this._verifyAndLoadKeys(vaultDoc, namespace);
+    await this._populateCache(vaultDoc, namespace);
   }
 
   /**
@@ -572,9 +585,12 @@ class KeyVaultService {
   /**
    * Verify vault integrity (KCV + binding) and load keys into cache.
    * Aligned with Java verifyAndLoadKeys().
+   * @param {Object} vaultDoc - Vault document
+   * @param {string} namespace - Canonical namespace
+   * @returns {Object} Cache entry
    * @private
    */
-  async _verifyAndLoadKeys(vaultDoc, namespace) {
+  async _populateCache(vaultDoc, namespace) {
     if (!vaultDoc.keys || vaultDoc.keys.length === 0) {
       throw new Error(`Vault has no key entries for namespace: ${namespace}`);
     }
@@ -653,21 +669,48 @@ class KeyVaultService {
     };
 
     this._cache.set(namespace, cacheEntry);
+    return cacheEntry;
   }
 
   /**
-   * Ensure a namespace is cached and return its entry.
+   * Ensure a namespace is cached for encryption operations.
+   * May create vault if not exists (encrypt path behavior).
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<Object>} Cache entry
    * @private
    */
-  async _ensureCached(namespace) {
+  async _ensureCachedForEncrypt(namespace) {
     const cached = this._getFromCache(namespace);
     if (cached) return cached;
     await this.ensureVaultInitialized(namespace);
     const entry = this._cache.get(namespace);
     if (!entry) {
-      throw new Error(`Vault not initialized for namespace: ${namespace}`);
+      throw new KeyResolutionError(`Vault not initialized for namespace: ${namespace}`, {
+        namespace,
+        vaultExists: false
+      });
     }
     return entry;
+  }
+
+  /**
+   * Ensure a namespace is cached for decryption operations.
+   * Read-only: throws KeyResolutionError if vault does not exist.
+   * @param {string} namespace - Canonical namespace
+   * @returns {Promise<Object>} Cache entry
+   * @private
+   */
+  async _ensureCachedForDecrypt(namespace) {
+    const cached = this._getFromCache(namespace);
+    if (cached) return cached;
+    const vaultDoc = await this._vaultStore.load(namespace);
+    if (!vaultDoc) {
+      throw new KeyResolutionError(`Vault not found for namespace: ${namespace}`, {
+        namespace,
+        vaultExists: false
+      });
+    }
+    return this._populateCache(vaultDoc, namespace);
   }
 
   /**

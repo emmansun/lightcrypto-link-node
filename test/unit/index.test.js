@@ -97,19 +97,41 @@ describe('index.js - public API exports', () => {
       expect(typeof lib.FieldCryptoService).toBe('function');
     });
 
-    test('exports FatalCryptoError', () => {
-      expect(lib.FatalCryptoError).toBeDefined();
-      expect(typeof lib.FatalCryptoError).toBe('function');
-    });
-
-    test('exports DecryptionError', () => {
-      expect(lib.DecryptionError).toBeDefined();
-      expect(typeof lib.DecryptionError).toBe('function');
-    });
-
     test('exports ProgrammaticCryptoService', () => {
       expect(lib.ProgrammaticCryptoService).toBeDefined();
       expect(typeof lib.ProgrammaticCryptoService).toBe('function');
+    });
+  });
+
+  describe('Error taxonomy module', () => {
+    test('exports LclCryptoError', () => {
+      expect(lib.LclCryptoError).toBeDefined();
+      expect(typeof lib.LclCryptoError).toBe('function');
+    });
+
+    test('exports PayloadCorruptionError', () => {
+      expect(lib.PayloadCorruptionError).toBeDefined();
+      expect(typeof lib.PayloadCorruptionError).toBe('function');
+    });
+
+    test('exports KeyResolutionError', () => {
+      expect(lib.KeyResolutionError).toBeDefined();
+      expect(typeof lib.KeyResolutionError).toBe('function');
+    });
+
+    test('exports CryptoAuthenticationError', () => {
+      expect(lib.CryptoAuthenticationError).toBeDefined();
+      expect(typeof lib.CryptoAuthenticationError).toBe('function');
+    });
+
+    test('exports SchemaDriftError', () => {
+      expect(lib.SchemaDriftError).toBeDefined();
+      expect(typeof lib.SchemaDriftError).toBe('function');
+    });
+
+    test('exports UnsupportedAlgorithmError', () => {
+      expect(lib.UnsupportedAlgorithmError).toBeDefined();
+      expect(typeof lib.UnsupportedAlgorithmError).toBe('function');
     });
   });
 

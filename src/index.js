@@ -20,8 +20,18 @@ const BlindIndexEngine = require('./blindindex/BlindIndexEngine');
 const TypeSerializer = require('./service/TypeSerializer');
 const TypeDeserializer = require('./service/TypeDeserializer');
 const KeyVaultService = require('./service/KeyVaultService');
-const { FieldCryptoService, FatalCryptoError, DecryptionError } = require('./service/FieldCryptoService');
+const { FieldCryptoService } = require('./service/FieldCryptoService');
 const ProgrammaticCryptoService = require('./service/ProgrammaticCryptoService');
+
+// Error taxonomy
+const {
+  LclCryptoError,
+  PayloadCorruptionError,
+  KeyResolutionError,
+  CryptoAuthenticationError,
+  SchemaDriftError,
+  UnsupportedAlgorithmError
+} = require('./error');
 
 const CmkProvider = require('./provider/CmkProvider');
 const LocalCmkProvider = require('./provider/LocalCmkProvider');
@@ -99,9 +109,15 @@ module.exports = {
   TypeDeserializer,
   KeyVaultService,
   FieldCryptoService,
-  FatalCryptoError,
-  DecryptionError,
   ProgrammaticCryptoService,
+
+  // Error taxonomy
+  LclCryptoError,
+  PayloadCorruptionError,
+  KeyResolutionError,
+  CryptoAuthenticationError,
+  SchemaDriftError,
+  UnsupportedAlgorithmError,
 
   // Providers
   CmkProvider,

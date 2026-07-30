@@ -1,9 +1,12 @@
 'use strict';
 
 const crypto = require('crypto');
-const { FieldCryptoService, FatalCryptoError, DecryptionError } = require('../../../src/service/FieldCryptoService');
+const { FieldCryptoService } = require('../../../src/service/FieldCryptoService');
 const MongooseStorageAdapter = require('../../../src/adapter/MongooseStorageAdapter');
 const BsonStructuredValueCodec = require('../../../src/adapter/BsonStructuredValueCodec');
+const PayloadCorruptionError = require('../../../src/error/PayloadCorruptionError');
+const UnsupportedAlgorithmError = require('../../../src/error/UnsupportedAlgorithmError');
+const CryptoAuthenticationError = require('../../../src/error/CryptoAuthenticationError');
 
 describe('FieldCryptoService', () => {
   let service;
@@ -98,14 +101,29 @@ describe('FieldCryptoService', () => {
       expect(service.decryptField(obj, dek, hmacKey, 'AES_256_GCM')).toEqual(obj);
     });
 
-    test('throws DecryptionError for invalid ciphertext', () => {
+    test('throws CryptoAuthenticationError for invalid ciphertext', () => {
       const subDoc = { _e: 1, _a: 'AES_256_GCM', _t: 'STR', c: Buffer.from('test') };
-      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(DecryptionError);
+      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(CryptoAuthenticationError);
     });
 
-    test('throws DecryptionError for unsupported algorithm', () => {
+    test('throws UnsupportedAlgorithmError for unsupported algorithm', () => {
       const subDoc = { _e: 1, _k: activeKid, _a: 'UNKNOWN_ALGO', _t: 'STR', c: Buffer.from('test') };
-      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(DecryptionError);
+      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(UnsupportedAlgorithmError);
+    });
+
+    test('throws PayloadCorruptionError for invalid encryption marker', () => {
+      const subDoc = { _e: 2, _a: 'AES_256_GCM', _t: 'STR', c: 'test' };
+      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(PayloadCorruptionError);
+    });
+
+    test('throws PayloadCorruptionError for missing ciphertext', () => {
+      const subDoc = { _e: 1, _a: 'AES_256_GCM', _t: 'STR' };
+      expect(() => service.decryptField(subDoc, dek, hmacKey, 'AES_256_GCM')).toThrow(PayloadCorruptionError);
+    });
+
+    test('throws UnsupportedAlgorithmError when no algorithm specified', () => {
+      const subDoc = { _e: 1, _t: 'STR', c: 'test' };
+      expect(() => service.decryptField(subDoc, dek, hmacKey, null)).toThrow(UnsupportedAlgorithmError);
     });
 
     test('round-trip with all algorithms', () => {

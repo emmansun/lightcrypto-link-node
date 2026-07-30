@@ -1,5 +1,30 @@
 # Architecture
 
+## Error Taxonomy (src/error/)
+
+Structured error hierarchy for programmatic fault classification on the decrypt path:
+
+```
+LclCryptoError (extends Error)
+│  .code, .namespace, .dekVersion, .kid, .fieldName, .cause
+│
+├── PayloadCorruptionError      ERR_LCL_PAYLOAD_CORRUPTION
+│   .blobLength, .expectedMinLength
+├── KeyResolutionError          ERR_LCL_KEY_RESOLUTION
+│   .vaultExists (boolean)
+├── CryptoAuthenticationError   ERR_LCL_CRYPTO_AUTH
+├── SchemaDriftError            ERR_LCL_SCHEMA_DRIFT
+│   .typeMarker, .rawBytes
+└── UnsupportedAlgorithmError   ERR_LCL_UNSUPPORTED_ALGORITHM
+    .algorithm
+```
+
+Design principles:
+- `catch (LclCryptoError)` for unified fallback; `catch (CryptoAuthenticationError)` for precise handling
+- `.code` field supports log aggregation and cross-language alignment (Java uses same codes)
+- Decrypt path is read-only: vault missing → `KeyResolutionError`, never creates garbage vaults
+- Decrypt failures emit `lcl.decrypt.field.failed` events via EventBus (tier by severity)
+
 ## SPI Layer (src/spi/)
 
 lightcrypto-link-node defines 5 abstract SPI (Service Provider Interface) base classes plus supporting types:

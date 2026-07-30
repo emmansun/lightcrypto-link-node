@@ -1,6 +1,7 @@
 'use strict';
 
 const { fromByte } = require('./AlgorithmId');
+const PayloadCorruptionError = require('../error/PayloadCorruptionError');
 
 const WIRE_VERSION = 0x01;
 const MIN_BLOB_SIZE = 12; // version(1) + algId(1) + nsLen(2) + dekVersion(4) + ivLen(1) + aadExtLen(2) + at least 1 byte CT
@@ -16,17 +17,21 @@ class WireFormatDecoder {
    */
   static decode(blob) {
     if (!Buffer.isBuffer(blob)) {
-      throw new Error('Input must be a Buffer');
+      throw new PayloadCorruptionError('Input must be a Buffer', { blobLength: 0 });
     }
     if (blob.length < MIN_BLOB_SIZE) {
-      throw new Error(`Truncated Wire Format V1 blob: ${blob.length} bytes (minimum ${MIN_BLOB_SIZE})`);
+      throw new PayloadCorruptionError(
+        `Truncated Wire Format V1 blob: ${blob.length} bytes (minimum ${MIN_BLOB_SIZE})`,
+        { blobLength: blob.length, expectedMinLength: MIN_BLOB_SIZE }
+      );
     }
 
     let offset = 0;
 
     const version = blob[offset++];
     if (version !== WIRE_VERSION) {
-      throw new Error(`Unsupported wire format version: 0x${version.toString(16).padStart(2, '0')} (expected 0x01)`);
+      const versionError = new Error(`Unsupported wire format version: 0x${version.toString(16).padStart(2, '0')} (expected 0x01)`);
+      throw new PayloadCorruptionError(versionError.message, { cause: versionError });
     }
 
     const algId = blob[offset++];
@@ -54,7 +59,7 @@ class WireFormatDecoder {
     const ciphertext = Buffer.from(blob.subarray(offset));
 
     if (ciphertext.length === 0) {
-      throw new Error('Empty ciphertext in Wire Format V1 blob');
+      throw new PayloadCorruptionError('Empty ciphertext in Wire Format V1 blob');
     }
 
     return {

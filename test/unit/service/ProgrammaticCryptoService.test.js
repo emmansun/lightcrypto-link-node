@@ -2,7 +2,6 @@
 
 const crypto = require('crypto');
 const ProgrammaticCryptoService = require('../../../src/service/ProgrammaticCryptoService');
-const { DecryptionError } = require('../../../src/service/FieldCryptoService');
 const BsonStructuredValueCodec = require('../../../src/adapter/BsonStructuredValueCodec');
 const MongooseStorageAdapter = require('../../../src/adapter/MongooseStorageAdapter');
 

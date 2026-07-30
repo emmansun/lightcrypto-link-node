@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const KeyVaultService = require('../../../src/service/KeyVaultService');
 const InMemoryVaultStore = require('../../../src/adapter/InMemoryVaultStore');
+const KeyResolutionError = require('../../../src/error/KeyResolutionError');
 
 const NS_USER_PHONE = 'default.default.User#phone';
 const NS_USER_EMAIL = 'default.default.User#email';
@@ -294,12 +295,13 @@ describe('KeyVaultService (unit)', () => {
       expect(pair.hmacKey).toBeInstanceOf(Buffer);
     });
 
-    test('getKeyPair throws for kid that is not in the namespace', async () => {
+    test('getKeyPair throws KeyResolutionError for kid that is not in the namespace', async () => {
       const svc = createService();
       await svc.ensureVaultInitialized(NS_USER_PHONE);
       await svc.ensureVaultInitialized(NS_USER_EMAIL);
 
       const kidPhone = await svc.getActiveKid(NS_USER_PHONE);
+      await expect(svc.getKeyPair(NS_USER_EMAIL, kidPhone)).rejects.toThrow(KeyResolutionError);
       await expect(svc.getKeyPair(NS_USER_EMAIL, kidPhone)).rejects.toThrow(/Unknown kid for namespace/);
     });
   });
@@ -371,10 +373,11 @@ describe('KeyVaultService (unit)', () => {
       expect(dekEmail).toBeInstanceOf(Buffer);
     });
 
-    test('throws for unknown kid', async () => {
+    test('throws KeyResolutionError for unknown kid', async () => {
       const svc = createService();
       await svc.ensureVaultInitialized(NS_USER_PHONE);
 
+      await expect(svc.getDek('v99-unknown')).rejects.toThrow(KeyResolutionError);
       await expect(svc.getDek('v99-unknown')).rejects.toThrow(/Unknown kid/);
     });
   });
@@ -390,10 +393,11 @@ describe('KeyVaultService (unit)', () => {
       expect(hmacKey.length).toBe(32);
     });
 
-    test('throws for unknown kid', async () => {
+    test('throws KeyResolutionError for unknown kid', async () => {
       const svc = createService();
       await svc.ensureVaultInitialized(NS_USER_PHONE);
 
+      await expect(svc.getHmacKey('v99-unknown')).rejects.toThrow(KeyResolutionError);
       await expect(svc.getHmacKey('v99-unknown')).rejects.toThrow(/Unknown kid/);
     });
   });
@@ -415,11 +419,44 @@ describe('KeyVaultService (unit)', () => {
       expect(dekV1Again.equals(dekV1)).toBe(true);
     });
 
-    test('throws for unknown version', async () => {
+    test('throws KeyResolutionError for unknown version', async () => {
       const svc = createService();
       await svc.ensureVaultInitialized(NS_USER_PHONE);
 
+      await expect(svc.getDekByVersion(NS_USER_PHONE, 99)).rejects.toThrow(KeyResolutionError);
       await expect(svc.getDekByVersion(NS_USER_PHONE, 99)).rejects.toThrow(/No key found/);
+    });
+  });
+
+  describe('decrypt path read-only behavior', () => {
+    test('getDekByVersion throws KeyResolutionError when vault does not exist', async () => {
+      const svc = createService();
+      // Do NOT initialize vault — directly call decrypt path
+      await expect(svc.getDekByVersion('nonexistent.namespace#field', 1)).rejects.toThrow(KeyResolutionError);
+      await expect(svc.getDekByVersion('nonexistent.namespace#field', 1)).rejects.toThrow(/Vault not found/);
+    });
+
+    test('getDekByVersion does not create vault when vault missing', async () => {
+      const svc = createService();
+      const saveSpy = jest.spyOn(vaultStore, 'save');
+
+      await expect(svc.getDekByVersion('nonexistent.namespace#field', 1)).rejects.toThrow(KeyResolutionError);
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    test('getKeyPair throws KeyResolutionError when vault does not exist', async () => {
+      const svc = createService();
+      await expect(svc.getKeyPair('nonexistent.namespace#field', 'v1-abcd1234')).rejects.toThrow(KeyResolutionError);
+    });
+
+    test('encrypt path still creates vault', async () => {
+      const svc = createService();
+      // getActiveKeyPair uses encrypt path — should create vault
+      const pair = await svc.getActiveKeyPair('new.namespace#field');
+      expect(pair.activeKid).toMatch(/^v1-/);
+
+      const stored = await vaultStore.load('new.namespace#field');
+      expect(stored).not.toBeNull();
     });
   });
 });

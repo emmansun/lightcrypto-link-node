@@ -8,6 +8,9 @@ const { fromName } = require('../format/AlgorithmId');
 const WireFormatEncoder = require('../format/WireFormatEncoder');
 const WireFormatDecoder = require('../format/WireFormatDecoder');
 const BlindIndexEngine = require('../blindindex/BlindIndexEngine');
+const CryptoAuthenticationError = require('../error/CryptoAuthenticationError');
+const PayloadCorruptionError = require('../error/PayloadCorruptionError');
+const UnsupportedAlgorithmError = require('../error/UnsupportedAlgorithmError');
 
 /**
  * Multi-algorithm cryptographic dispatch.
@@ -31,7 +34,7 @@ class CryptoCodec {
   getEncryptor(algorithm) {
     const encryptor = this._encryptors.get(algorithm);
     if (!encryptor) {
-      throw new Error(`Unsupported algorithm: ${algorithm}`);
+      throw new UnsupportedAlgorithmError(`Unsupported algorithm: ${algorithm}`, { algorithm });
     }
     return encryptor;
   }
@@ -85,7 +88,15 @@ class CryptoCodec {
         ? WireFormatDecoder.reconstructAad(decoded)
         : null;
 
-      return encryptor.decrypt(key, decoded.iv, decoded.ciphertext, aad);
+      try {
+        return encryptor.decrypt(key, decoded.iv, decoded.ciphertext, aad);
+      } catch (e) {
+        throw new CryptoAuthenticationError(`Crypto authentication failed: ${e.message}`, {
+          cause: e,
+          namespace: decoded.namespace,
+          dekVersion: decoded.dekVersion
+        });
+      }
     }
 
     // Legacy Buffer format fallback (for backward compatibility during transition)
@@ -95,10 +106,16 @@ class CryptoCodec {
       const algInfo = fromName(algorithm);
       const iv = data.subarray(0, algInfo.ivLength);
       const ciphertext = data.subarray(algInfo.ivLength);
-      return encryptor.decrypt(key, iv, ciphertext, null);
+      try {
+        return encryptor.decrypt(key, iv, ciphertext, null);
+      } catch (e) {
+        throw new CryptoAuthenticationError(`Crypto authentication failed: ${e.message}`, {
+          cause: e
+        });
+      }
     }
 
-    throw new Error('Unsupported data format: expected Base64URL string or Buffer');
+    throw new PayloadCorruptionError('Unsupported data format: expected Base64URL string or Buffer');
   }
 
   /**

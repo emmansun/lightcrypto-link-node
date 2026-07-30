@@ -151,7 +151,7 @@ describe('Java Interoperability', () => {
     test('invalid ciphertext produces decryption error', () => {
       const subDoc = { _e: 1, _a: 'AES_256_GCM', _t: 'STR', c: Buffer.from('test') };
       expect(() => fieldService.decryptField(subDoc, TEST_DEK, TEST_HMAC_KEY, 'AES_256_GCM'))
-        .toThrow(/Decryption failed/);
+        .toThrow(/Crypto authentication failed/);
     });
 
     test('unsupported algorithm produces Java-compatible error message', () => {

@@ -1,18 +1,75 @@
 # Troubleshooting
 
+## Error Hierarchy
+
+All decryption-path errors extend `LclCryptoError`, enabling programmatic error handling:
+
+```javascript
+const { LclCryptoError, CryptoAuthenticationError, KeyResolutionError } = require('lightcrypto-link-node');
+
+try {
+  await decryptDocument(doc);
+} catch (e) {
+  if (e instanceof CryptoAuthenticationError) {
+    // Potential tampering — auth tag / padding failure
+  } else if (e instanceof KeyResolutionError) {
+    // Missing vault or DEK version
+    console.log(e.vaultExists); // false = vault not found
+  } else if (e instanceof LclCryptoError) {
+    // Catch-all for other LCL errors
+    console.log(e.code, e.namespace, e.dekVersion);
+  }
+}
+```
+
+| Error Class | Code | Trigger |
+|-------------|------|--------|
+| `PayloadCorruptionError` | `ERR_LCL_PAYLOAD_CORRUPTION` | Blob truncated, wrong version, non-Buffer input, empty ciphertext |
+| `KeyResolutionError` | `ERR_LCL_KEY_RESOLUTION` | Vault not found, unknown kid, unknown dekVersion |
+| `CryptoAuthenticationError` | `ERR_LCL_CRYPTO_AUTH` | AES-GCM auth tag mismatch, AES-CBC padding error |
+| `SchemaDriftError` | `ERR_LCL_SCHEMA_DRIFT` | Decryption OK but type deserialization failed |
+| `UnsupportedAlgorithmError` | `ERR_LCL_UNSUPPORTED_ALGORITHM` | Algorithm not registered in CryptoCodec |
+
+All errors carry structured context: `.namespace`, `.dekVersion`, `.kid`, `.fieldName`, `.cause` (as applicable).
+
 ## Common Errors
 
 | Error | Cause | Solution |
 |-------|-------|----------|
 | KCV mismatch | Key corruption or wrong CMK | Verify CMK matches the one used to create the vault |
 | missing '_k' (kid) field | Malformed encrypted sub-document | Check document was encrypted by compatible library version |
-| Unsupported algorithm | Unknown `_a` value or unknown Wire Format algorithm byte | Ensure both Java and Node.js use supported algorithms |
+| `ERR_LCL_UNSUPPORTED_ALGORITHM` | Unknown `_a` value or unknown Wire Format algorithm byte | Ensure both Java and Node.js use supported algorithms |
 | Unsupported query operation on encrypted field | Query uses operators like `$gt` / `$regex` on `encrypt: true` + `blindIndex: true` field | Use exact-match or `$in` only, or query a separate plaintext/search projection field |
 | Unknown algorithm byte: 0x03 | SM4_GCM wire format detected | SM4-GCM encryption is not supported in Node.js (OpenSSL limitation); decryption from Java-encrypted documents will fail |
 | Ambiguous namespace | Namespace string has unexpected dot count | Use either `Entity#field` (shorthand) or `tenant.realm.entity#field` (full form) |
 | CMK must be 64 hex chars | Invalid CMK format | Provide a valid 64-character hex string (32 bytes) |
 | cmkVersion is required for unwrap | Missing key version metadata | Ensure wrap() was called with a provider that stores cmkVersion |
 | Azure/Alibaba SDK not installed | Missing optional dependency | `npm install @azure/keyvault-keys @azure/identity` or `npm install @alicloud/kms20160120 @alicloud/openapi-client` |
+| `ERR_LCL_KEY_RESOLUTION` (vaultExists=false) | Decrypt path called for namespace with no vault | Verify namespace in ciphertext blob matches an initialized vault; do NOT create vault on decrypt |
+| `ERR_LCL_CRYPTO_AUTH` | Wrong DEK or ciphertext tampered | Check DEK version matches; if persistent, audit for data corruption |
+| `ERR_LCL_SCHEMA_DRIFT` | Type marker incompatible with decrypted bytes | Schema evolved without data migration; check `_t` field vs actual plaintext |
+
+## Decrypt Path Behavior
+
+The decrypt path (`getDekByVersion`, `getKeyPair`) is **read-only**:
+
+- If the vault does not exist, a `KeyResolutionError` is thrown with `.vaultExists = false`
+- The decrypt path **never** creates a vault (prevents garbage vaults from corrupted namespaces)
+- The encrypt path (`getActiveKeyPair`, `getActiveDekVersion`) still auto-creates vaults as before
+
+### Decrypt Failure Events
+
+When decryption fails in the Mongoose plugin, a structured event is emitted via EventBus:
+
+| Error Type | Event Name | Tier | Rationale |
+|-----------|------------|------|----------|
+| `CryptoAuthenticationError` | `lcl.decrypt.field.failed` | L3 (Audit) | Potential tampering |
+| `KeyResolutionError` | `lcl.decrypt.field.failed` | L2 (Operational) | Ops attention |
+| `PayloadCorruptionError` | `lcl.decrypt.field.failed` | L2 (Operational) | Data corruption |
+| `UnsupportedAlgorithmError` | `lcl.decrypt.field.failed` | L2 (Operational) | Config error |
+| `SchemaDriftError` | `lcl.decrypt.field.failed` | L1 (Diagnostic) | Dev troubleshooting |
+
+Event attributes include: `namespace`, `dekVersion`, `errorType`, `errorCode`, `fieldName`.
 
 ## Security Best Practices
 

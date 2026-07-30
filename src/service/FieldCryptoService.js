@@ -4,23 +4,9 @@ const CryptoCodec = require('../crypto/CryptoCodec');
 const TypeSerializer = require('./TypeSerializer');
 const TypeDeserializer = require('./TypeDeserializer');
 const Namespace = require('../namespace/Namespace');
-
-/**
- * Custom error classes for crypto operations.
- */
-class FatalCryptoError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'FatalCryptoError';
-  }
-}
-
-class DecryptionError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'DecryptionError';
-  }
-}
+const PayloadCorruptionError = require('../error/PayloadCorruptionError');
+const UnsupportedAlgorithmError = require('../error/UnsupportedAlgorithmError');
+const SchemaDriftError = require('../error/SchemaDriftError');
 
 /**
  * FieldCryptoService - Encrypts/decrypts individual field values.
@@ -143,38 +129,34 @@ class FieldCryptoService {
       if (subDocument._e === undefined) {
         return subDocument; // Not an encrypted sub-document
       }
-      throw new DecryptionError(`Invalid encryption marker: _e = ${subDocument._e}`);
+      throw new PayloadCorruptionError(`Invalid encryption marker: _e = ${subDocument._e}`);
     }
 
     // Get algorithm from sub-document or Wire Format header
     const algo = subDocument._a || algorithm;
     if (!algo) {
-      throw new DecryptionError('Unsupported algorithm: no algorithm specified in sub-document');
+      throw new UnsupportedAlgorithmError('Unsupported algorithm: no algorithm specified in sub-document', { algorithm: null });
     }
 
     // Extract blob via StorageAdapter
     const ciphertext = this._storageAdapter.extractBlob(subDocument);
     if (!ciphertext) {
-      throw new DecryptionError('Missing ciphertext field in encrypted sub-document');
+      throw new PayloadCorruptionError('Missing ciphertext field in encrypted sub-document');
     }
 
-    // Decrypt
+    // Decrypt — let CryptoAuthenticationError propagate directly
     let plaintext;
-    try {
-      if (typeof ciphertext === 'string') {
-        // Wire Format V1 Base64URL string
-        plaintext = this._codec.decrypt(dek, ciphertext, algo);
-      } else if (Buffer.isBuffer(ciphertext)) {
-        // Legacy Buffer format
-        plaintext = this._codec.decrypt(dek, ciphertext, algo);
-      } else if (ciphertext && ciphertext._bsontype === 'Binary' && ciphertext.buffer) {
-        // BSON Binary → Buffer
-        plaintext = this._codec.decrypt(dek, ciphertext.buffer, algo);
-      } else {
-        plaintext = this._codec.decrypt(dek, Buffer.from(ciphertext), algo);
-      }
-    } catch (e) {
-      throw new DecryptionError(`Decryption failed: ${e.message}`);
+    if (typeof ciphertext === 'string') {
+      // Wire Format V1 Base64URL string
+      plaintext = this._codec.decrypt(dek, ciphertext, algo);
+    } else if (Buffer.isBuffer(ciphertext)) {
+      // Legacy Buffer format
+      plaintext = this._codec.decrypt(dek, ciphertext, algo);
+    } else if (ciphertext && ciphertext._bsontype === 'Binary' && ciphertext.buffer) {
+      // BSON Binary → Buffer
+      plaintext = this._codec.decrypt(dek, ciphertext.buffer, algo);
+    } else {
+      plaintext = this._codec.decrypt(dek, Buffer.from(ciphertext), algo);
     }
 
     // Get type marker via StorageAdapter
@@ -194,8 +176,16 @@ class FieldCryptoService {
       return plaintext;
     }
     const stringValue = plaintext.toString('utf8');
-    return this._deserializer.deserialize(typeMarker, stringValue);
+    try {
+      return this._deserializer.deserialize(typeMarker, stringValue);
+    } catch (e) {
+      throw new SchemaDriftError(`Type deserialization failed for marker '${typeMarker}': ${e.message}`, {
+        typeMarker,
+        rawBytes: plaintext,
+        cause: e
+      });
+    }
   }
 }
 
-module.exports = { FieldCryptoService, FatalCryptoError, DecryptionError };
+module.exports = { FieldCryptoService };

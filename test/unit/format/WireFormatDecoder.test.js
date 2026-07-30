@@ -3,6 +3,7 @@
 const WireFormatEncoder = require('../../../src/format/WireFormatEncoder');
 const WireFormatDecoder = require('../../../src/format/WireFormatDecoder');
 const Namespace = require('../../../src/namespace/Namespace');
+const PayloadCorruptionError = require('../../../src/error/PayloadCorruptionError');
 
 describe('WireFormatDecoder', () => {
   const ns = Namespace.parse('User#phone');
@@ -23,17 +24,24 @@ describe('WireFormatDecoder', () => {
       expect(decoded.ciphertext).toEqual(ct);
     });
 
-    it('throws on unsupported version', () => {
+    it('throws PayloadCorruptionError on unsupported version', () => {
       const blob = Buffer.alloc(20);
       blob[0] = 0x02; // wrong version
+      expect(() => WireFormatDecoder.decode(blob)).toThrow(PayloadCorruptionError);
       expect(() => WireFormatDecoder.decode(blob)).toThrow('Unsupported wire format version');
     });
 
-    it('throws on truncated blob', () => {
+    it('throws PayloadCorruptionError on truncated blob', () => {
+      expect(() => WireFormatDecoder.decode(Buffer.alloc(5))).toThrow(PayloadCorruptionError);
       expect(() => WireFormatDecoder.decode(Buffer.alloc(5))).toThrow('Truncated');
     });
 
-    it('throws on empty ciphertext', () => {
+    it('throws PayloadCorruptionError on non-Buffer input', () => {
+      expect(() => WireFormatDecoder.decode('not a buffer')).toThrow(PayloadCorruptionError);
+      expect(() => WireFormatDecoder.decode(null)).toThrow(PayloadCorruptionError);
+    });
+
+    it('throws PayloadCorruptionError on empty ciphertext', () => {
       // Build a valid blob but with 0 ciphertext bytes
       const iv = Buffer.alloc(12, 0xDD);
       const nsBytes = ns.canonicalBytes();

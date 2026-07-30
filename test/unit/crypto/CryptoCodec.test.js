@@ -3,6 +3,9 @@
 const crypto = require('crypto');
 const CryptoCodec = require('../../../src/crypto/CryptoCodec');
 const Namespace = require('../../../src/namespace/Namespace');
+const CryptoAuthenticationError = require('../../../src/error/CryptoAuthenticationError');
+const UnsupportedAlgorithmError = require('../../../src/error/UnsupportedAlgorithmError');
+const PayloadCorruptionError = require('../../../src/error/PayloadCorruptionError');
 
 describe('CryptoCodec', () => {
   let codec;
@@ -41,7 +44,8 @@ describe('CryptoCodec', () => {
       expect(decrypted.toString('utf8')).toBe('SM4 test');
     });
 
-    test('unsupported algorithm throws', () => {
+    test('unsupported algorithm throws UnsupportedAlgorithmError', () => {
+      expect(() => codec.encrypt(dek32, Buffer.from('x'), 'UNKNOWN', ns, 1)).toThrow(UnsupportedAlgorithmError);
       expect(() => codec.encrypt(dek32, Buffer.from('x'), 'UNKNOWN', ns, 1)).toThrow('Unsupported algorithm');
     });
 
@@ -63,6 +67,24 @@ describe('CryptoCodec', () => {
       // Decrypt without explicit algorithm — uses header
       const decrypted = codec.decrypt(dek32, encrypted);
       expect(decrypted.toString('utf8')).toBe('auto-detect');
+    });
+
+    test('decrypt with wrong key throws CryptoAuthenticationError (GCM)', () => {
+      const plaintext = Buffer.from('secret', 'utf8');
+      const encrypted = codec.encrypt(dek32, plaintext, 'AES_256_GCM', ns, 1);
+      const wrongKey = crypto.randomBytes(32);
+      expect(() => codec.decrypt(wrongKey, encrypted)).toThrow(CryptoAuthenticationError);
+    });
+
+    test('decrypt with wrong key throws CryptoAuthenticationError (CBC)', () => {
+      const plaintext = Buffer.from('secret', 'utf8');
+      const encrypted = codec.encrypt(dek32, plaintext, 'AES_256_CBC', ns, 1);
+      const wrongKey = crypto.randomBytes(32);
+      expect(() => codec.decrypt(wrongKey, encrypted)).toThrow(CryptoAuthenticationError);
+    });
+
+    test('decrypt non-string non-Buffer throws PayloadCorruptionError', () => {
+      expect(() => codec.decrypt(dek32, 12345, 'AES_256_GCM')).toThrow(PayloadCorruptionError);
     });
   });
 

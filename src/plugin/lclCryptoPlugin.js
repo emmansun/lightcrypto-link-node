@@ -13,6 +13,10 @@ const MongooseQueryTransformer = require('../adapter/MongooseQueryTransformer');
 const BootstrapEngine = require('../bootstrap/BootstrapEngine');
 const BootstrapContext = require('../bootstrap/BootstrapContext');
 const { createDefaultPhases } = require('../bootstrap');
+const { LclCryptoError, PayloadCorruptionError, CryptoAuthenticationError, SchemaDriftError } = require('../error');
+const LclEvent = require('../event/LclEvent');
+const EventTier = require('../event/EventTier');
+const NoOpEventBus = require('../event/NoOpEventBus');
 
 /**
  * Check if a value is a mongoose Schema instance.
@@ -454,6 +458,7 @@ function lclCryptoPlugin(schema, options) {
   const algorithm = options.algorithm || 'AES_256_GCM';
   const tenant = options.tenant || 'default';
   const realm = options.realm || 'default';
+  const eventBus = options.eventBus || NoOpEventBus.INSTANCE;
 
   // SPI implementations — accept overrides or use Mongoose/BSON defaults
   const storageAdapter = options.storageAdapter || new MongooseStorageAdapter();
@@ -892,13 +897,41 @@ function lclCryptoPlugin(schema, options) {
       namespace = decoded.namespace;
       dekVersion = decoded.dekVersion;
     } else {
-      throw new Error('Unsupported ciphertext format in encrypted sub-document');
+      throw new PayloadCorruptionError('Unsupported ciphertext format in encrypted sub-document');
     }
 
-    await keyVaultService.ensureVaultInitialized(namespace);
-    const dek = await keyVaultService.getDekByVersion(namespace, dekVersion);
+    try {
+      const dek = await keyVaultService.getDekByVersion(namespace, dekVersion);
+      return await fieldCryptoService.decryptField(subDoc, dek, null, algorithm);
+    } catch (e) {
+      if (e instanceof LclCryptoError) {
+        // Determine tier based on error type
+        let tier;
+        if (e instanceof CryptoAuthenticationError) {
+          tier = EventTier.L3; // Audit — potential tampering
+        } else if (e instanceof SchemaDriftError) {
+          tier = EventTier.L1; // Diagnostic — dev troubleshooting
+        } else {
+          tier = EventTier.L2; // Operational — KeyResolution, PayloadCorruption, UnsupportedAlgorithm
+        }
 
-    return fieldCryptoService.decryptField(subDoc, dek, null, algorithm);
+        eventBus.emit(
+          LclEvent.builder()
+            .event('lcl.decrypt.field.failed')
+            .tier(tier)
+            .result('failed')
+            .namespace(namespace)
+            .dekVersion(dekVersion)
+            .errorType(e.constructor.name)
+            .attributes(new Map([
+              ['errorCode', e.code],
+              ['fieldName', e.fieldName || '']
+            ]))
+            .build()
+        );
+      }
+      throw e;
+    }
   }
 }
 
