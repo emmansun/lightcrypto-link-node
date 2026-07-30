@@ -79,8 +79,8 @@ describeOrSkip('Integration: AzureKmsProvider + Mongoose Plugin', () => {
       expect(provider.getProviderId()).toBe('azure-keyvault');
     });
 
-    test('getPublicReference returns keyName', () => {
-      expect(provider.getPublicReference()).toBe(keyName);
+    test('getPublicReference returns vaultUrl/keys/keyName', () => {
+      expect(provider.getPublicReference()).toBe(`${vaultUrl}/keys/${keyName}`);
     });
   });
 

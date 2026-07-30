@@ -93,7 +93,7 @@ Azure Key Vault CMK provider using **RSA-OAEP-256** (SHA-256) for asymmetric key
 |----------|-------|
 | Provider ID | `azure-keyvault` |
 | Algorithm | `RSA-OAEP-256` |
-| Public reference | `keyName` |
+| Public reference | `{vaultUrl}/keys/{keyName}` (or `keyName` if no vaultUrl) |
 | Dependencies | `@azure/keyvault-keys`, `@azure/identity` (lazy-loaded) |
 
 ```javascript
@@ -106,7 +106,7 @@ const provider = new AzureKmsProvider({
   credential: new DefaultAzureCredential() // optional
 });
 
-// Or inject a pre-configured KeyClient (vaultUrl/credential are ignored)
+// Or inject a pre-configured KeyClient (credential is ignored; vaultUrl is extracted from keyClient.vaultUrl)
 const { KeyClient } = require('@azure/keyvault-keys');
 const customKeyClient = new KeyClient(vaultUrl, credential, {
   retryOptions: { maxRetries: 5 },

@@ -61,9 +61,20 @@ describe('AzureKmsProvider', () => {
       expect(provider.getProviderId()).toBe('azure-keyvault');
     });
 
-    test('getPublicReference returns keyName', () => {
+    test('getPublicReference returns keyName when no vaultUrl', () => {
       const provider = new AzureKmsProvider({ keyName: 'my-production-key' });
       expect(provider.getPublicReference()).toBe('my-production-key');
+    });
+
+    test('getPublicReference returns vaultUrl/keys/keyName when vaultUrl configured', () => {
+      const provider = new AzureKmsProvider({ keyName: 'my-key', vaultUrl: 'https://myvault.vault.azure.net' });
+      expect(provider.getPublicReference()).toBe('https://myvault.vault.azure.net/keys/my-key');
+    });
+
+    test('getPublicReference extracts vaultUrl from custom keyClient', () => {
+      const mockClient = { vaultUrl: 'https://custom.vault.azure.net' };
+      const provider = new AzureKmsProvider({ keyName: 'my-key', keyClient: mockClient });
+      expect(provider.getPublicReference()).toBe('https://custom.vault.azure.net/keys/my-key');
     });
 
     test('getCmkVersion returns configured version', () => {

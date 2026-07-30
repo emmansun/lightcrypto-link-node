@@ -38,18 +38,28 @@ class AzureKmsProvider extends CmkProvider {
       throw new Error('AzureKmsProvider requires config.keyName');
     }
     this._keyName = config.keyName;
-    this._vaultUrl = config.vaultUrl || null;
+    this._keyClient = config.keyClient || null;
+    // Resolve vaultUrl: explicit config > keyClient.vaultUrl > null
+    this._vaultUrl = config.vaultUrl || (this._keyClient && this._keyClient.vaultUrl) || null;
     this._cmkVersion = config.cmkVersion || null;
     this._publicKeyPem = config.publicKeyPem || null;
     this._credential = config.credential || null;
-    this._keyClient = config.keyClient || null;
   }
 
   getProviderId() {
     return 'azure-keyvault';
   }
 
+  /**
+   * Returns a globally unique reference: `{vaultUrl}/keys/{keyName}` when vaultUrl is
+   * configured, or just `{keyName}` as fallback. Including the vault URL prevents
+   * same-provider skip false-positives when different vault instances share a key name.
+   * @returns {string}
+   */
   getPublicReference() {
+    if (this._vaultUrl) {
+      return `${this._vaultUrl}/keys/${this._keyName}`;
+    }
     return this._keyName;
   }
 

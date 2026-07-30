@@ -5,7 +5,7 @@ const OptimisticLockError = require('../spi/OptimisticLockError');
 
 /**
  * Deep copy a value using structured clone (Node 17+) or JSON round-trip fallback.
- * Handles Buffer instances correctly.
+ * Handles Buffer instances correctly (structuredClone downgrades Buffer to Uint8Array).
  *
  * @param {*} value - Value to deep copy
  * @returns {*} Deep copy of the value
@@ -13,9 +13,11 @@ const OptimisticLockError = require('../spi/OptimisticLockError');
 function deepCopy(value) {
   if (value === null || value === undefined) return value;
 
-  // Use structuredClone if available (Node 17+)
+  // Use structuredClone if available (Node 17+), then restore Buffer instances
+  // because structuredClone converts Buffer → Uint8Array.
   if (typeof structuredClone === 'function') {
-    return structuredClone(value);
+    const cloned = structuredClone(value);
+    return restoreBuffers(cloned);
   }
 
   // Fallback: JSON round-trip with Buffer handling
@@ -30,6 +32,29 @@ function deepCopy(value) {
     }
     return val;
   });
+}
+
+/**
+ * Recursively restore Uint8Array instances to Buffer.
+ * @param {*} obj
+ * @returns {*}
+ */
+function restoreBuffers(obj) {
+  if (obj instanceof Uint8Array && !Buffer.isBuffer(obj)) {
+    return Buffer.from(obj.buffer, obj.byteOffset, obj.byteLength);
+  }
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      obj[i] = restoreBuffers(obj[i]);
+    }
+    return obj;
+  }
+  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
+    for (const key of Object.keys(obj)) {
+      obj[key] = restoreBuffers(obj[key]);
+    }
+  }
+  return obj;
 }
 
 /**

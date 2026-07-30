@@ -96,7 +96,7 @@ const provider = new AzureKmsProvider({
   cmkVersion: 'key-version-id',                   // Optional: auto-resolved if omitted
   publicKeyPem: '-----BEGIN PUBLIC KEY-----...',   // Optional: auto-resolved for local wrap
   // credential: customCredential,                 // Optional: custom Azure credential
-  // keyClient: preConfiguredKeyClient             // Optional: pre-configured KeyClient (ignores vaultUrl/credential)
+  // keyClient: preConfiguredKeyClient             // Optional: pre-configured KeyClient (vaultUrl extracted from keyClient.vaultUrl)
 });
 ```
 

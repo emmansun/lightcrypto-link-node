@@ -2,6 +2,9 @@
 
 const crypto = require('crypto');
 const CryptoCodec = require('../crypto/CryptoCodec');
+const NoOpEventBus = require('../event/NoOpEventBus');
+const LclEvent = require('../event/LclEvent');
+const EventTier = require('../event/EventTier');
 
 const DEFAULT_CACHE_TTL = 3600000; // 1 hour
 
@@ -18,11 +21,13 @@ class KeyVaultService {
    * @param {VaultStore} options.vaultStore - VaultStore implementation for vault persistence
    * @param {CmkProvider} options.cmkProvider - CMK provider for key wrapping
    * @param {number} [options.cacheTtl=3600000] - Cache TTL in milliseconds
+   * @param {EventBus} [options.eventBus] - EventBus for observability events (default NoOpEventBus)
    */
   constructor(options) {
     this._vaultStore = options.vaultStore;
     this._cmkProvider = options.cmkProvider;
     this._cacheTtl = options.cacheTtl || DEFAULT_CACHE_TTL;
+    this._eventBus = options.eventBus || NoOpEventBus.INSTANCE;
     this._codec = new CryptoCodec();
     /** @type {Map<string, Object>} Per-namespace key contexts: canonicalNamespace -> cache entry */
     this._cache = new Map();
@@ -228,6 +233,267 @@ class KeyVaultService {
 
     // Reload keys into cache
     await this._verifyAndLoadKeys(vaultDoc, namespace);
+  }
+
+  /**
+   * Re-wrap all key entries in a namespace's vault under a new CMK provider.
+   * Does NOT generate new DEK/HMAC key material — only changes the wrapping layer.
+   *
+   * @param {string} namespace - Canonical namespace (e.g., "default.default.User#phone")
+   * @param {CmkProvider} targetProvider - The target CMK provider to re-wrap keys with
+   * @param {Object} [options] - Optional parameters
+   * @param {boolean} [options.dryRun=false] - If true, perform validation only without persisting
+   * @returns {Promise<Object>} RewrapResult: { namespace, success, skipped, dryRun, keyCount, error, durationMicros }
+   */
+  async rewrapVault(namespace, targetProvider, options = {}) {
+    const startTime = process.hrtime.bigint();
+    const dryRun = options.dryRun === true;
+
+    try {
+      // Load vault document
+      const vaultDoc = await this._vaultStore.load(namespace);
+      if (!vaultDoc) {
+        throw new Error(`Vault not found for namespace: ${namespace}`);
+      }
+
+      // Same-provider skip: both providerId AND publicReference must match
+      const targetProviderId = targetProvider.getProviderId();
+      const targetPublicRef = targetProvider.getPublicReference();
+      if (vaultDoc.cmk.provider === targetProviderId && vaultDoc.cmk.id === targetPublicRef) {
+        const durationMicros = Number(process.hrtime.bigint() - startTime) / 1000;
+        return {
+          namespace,
+          success: true,
+          skipped: true,
+          dryRun,
+          keyCount: vaultDoc.keys.length,
+          error: null,
+          durationMicros
+        };
+      }
+
+      // Unwrap all entries and verify KCV/binding invariance
+      const unwrappedEntries = [];
+      for (const keyEntry of vaultDoc.keys) {
+        const dek = await this._cmkProvider.unwrap({
+          ciphertext: keyEntry.dek.wrapped,
+          algorithm: keyEntry.dek.algorithm,
+          metadata: { cmkVersion: keyEntry.dek.cmkVersion }
+        });
+
+        const hmacKey = await this._cmkProvider.unwrap({
+          ciphertext: keyEntry.hmk.wrapped,
+          algorithm: keyEntry.hmk.algorithm,
+          metadata: { cmkVersion: keyEntry.hmk.cmkVersion }
+        });
+
+        // Verify KCV invariance
+        const dekKcv = this._codec.computeKcv(dek, 'AES_256_GCM');
+        if (dekKcv !== keyEntry.dek.kcv) {
+          throw new Error(
+            `DEK KCV mismatch for kid ${keyEntry.kid} during re-wrap! Vault integrity compromised.`
+          );
+        }
+
+        const hmkKcv = this._codec.computeKcv(hmacKey, 'AES_256_GCM');
+        if (hmkKcv !== keyEntry.hmk.kcv) {
+          throw new Error(
+            `HMAC Key KCV mismatch for kid ${keyEntry.kid} during re-wrap! Vault integrity compromised.`
+          );
+        }
+
+        // Verify binding invariance
+        const binding = this._codec.computeBinding(hmacKey, dek);
+        if (binding !== keyEntry.binding) {
+          throw new Error(
+            `Key binding mismatch for kid ${keyEntry.kid} during re-wrap! DEK/HMAC key pair corrupted.`
+          );
+        }
+
+        unwrappedEntries.push({ keyEntry, dek, hmacKey });
+      }
+
+      // Re-wrap with target provider and perform post-rewrap roundtrip verification
+      const rewrappedKeys = [];
+      for (const { keyEntry, dek, hmacKey } of unwrappedEntries) {
+        const wrappedDek = await targetProvider.wrap(dek);
+        const wrappedHmk = await targetProvider.wrap(hmacKey);
+
+        // Post-rewrap roundtrip verification: unwrap with target and confirm material matches
+        const verifyDek = await targetProvider.unwrap({
+          ciphertext: wrappedDek.ciphertext,
+          algorithm: wrappedDek.algorithm,
+          metadata: wrappedDek.metadata || {}
+        });
+        if (!verifyDek.equals(dek)) {
+          throw new Error(
+            `Post-rewrap DEK roundtrip verification failed for kid ${keyEntry.kid}! Target provider misconfigured.`
+          );
+        }
+
+        const verifyHmk = await targetProvider.unwrap({
+          ciphertext: wrappedHmk.ciphertext,
+          algorithm: wrappedHmk.algorithm,
+          metadata: wrappedHmk.metadata || {}
+        });
+        if (!verifyHmk.equals(hmacKey)) {
+          throw new Error(
+            `Post-rewrap HMAC key roundtrip verification failed for kid ${keyEntry.kid}! Target provider misconfigured.`
+          );
+        }
+
+        rewrappedKeys.push({
+          kid: keyEntry.kid,
+          status: keyEntry.status,
+          dek: {
+            wrapped: wrappedDek.ciphertext,
+            algorithm: wrappedDek.algorithm,
+            kcv: keyEntry.dek.kcv,
+            cmkVersion: wrappedDek.metadata?.cmkVersion || ''
+          },
+          hmk: {
+            wrapped: wrappedHmk.ciphertext,
+            algorithm: wrappedHmk.algorithm,
+            kcv: keyEntry.hmk.kcv,
+            cmkVersion: wrappedHmk.metadata?.cmkVersion || ''
+          },
+          binding: keyEntry.binding,
+          createdAt: keyEntry.createdAt
+        });
+      }
+
+      // Dry-run: validation complete, do not persist
+      if (dryRun) {
+        const durationMicros = Number(process.hrtime.bigint() - startTime) / 1000;
+        return {
+          namespace,
+          success: true,
+          skipped: false,
+          dryRun: true,
+          keyCount: vaultDoc.keys.length,
+          error: null,
+          durationMicros
+        };
+      }
+
+      // Build updated vault document
+      vaultDoc.keys = rewrappedKeys;
+      vaultDoc.cmk = {
+        provider: targetProviderId,
+        id: targetPublicRef
+      };
+      vaultDoc.v = vaultDoc.v + 1;
+      vaultDoc.updatedAt = new Date();
+
+      // Persist via VaultStore.rotate() with optimistic locking
+      try {
+        await this._vaultStore.rotate(vaultDoc);
+      } catch (e) {
+        if (e.name === 'OptimisticLockError') {
+          throw new Error(
+            `Concurrent modification detected during re-wrap for namespace: ${namespace}. ` +
+            `Another rotation or re-wrap may be in progress. Please retry.`
+          );
+        }
+        throw e;
+      }
+
+      // Evict cache entry so subsequent operations reload with new provider
+      const cached = this._cache.get(namespace);
+      if (cached) {
+        this._destroyKeyMaterial(cached);
+        this._cache.delete(namespace);
+      }
+
+      const durationMicros = Number(process.hrtime.bigint() - startTime) / 1000;
+
+      // Emit success event
+      this._eventBus.emit(
+        LclEvent.builder()
+          .event('lcl.rewrap.namespace.completed')
+          .tier(EventTier.L2)
+          .result('success')
+          .namespace(namespace)
+          .durationMicros(durationMicros)
+          .build()
+      );
+
+      return {
+        namespace,
+        success: true,
+        skipped: false,
+        dryRun: false,
+        keyCount: vaultDoc.keys.length,
+        error: null,
+        durationMicros
+      };
+    } catch (err) {
+      const durationMicros = Number(process.hrtime.bigint() - startTime) / 1000;
+
+      // Emit failure event
+      this._eventBus.emit(
+        LclEvent.builder()
+          .event('lcl.rewrap.namespace.failed')
+          .tier(EventTier.L2)
+          .result('failed')
+          .namespace(namespace)
+          .errorType(err.name || 'Error')
+          .durationMicros(durationMicros)
+          .build()
+      );
+
+      return {
+        namespace,
+        success: false,
+        skipped: false,
+        dryRun,
+        keyCount: 0,
+        error: err.message,
+        durationMicros
+      };
+    }
+  }
+
+  /**
+   * Re-wrap all vaults under a new CMK provider with per-namespace error isolation.
+   *
+   * @param {CmkProvider} targetProvider - The target CMK provider to re-wrap keys with
+   * @param {Object} [options] - Optional parameters
+   * @param {boolean} [options.dryRun=false] - If true, perform validation only without persisting
+   * @returns {Promise<Object[]>} Array of RewrapResult objects
+   */
+  async rewrapAllVaults(targetProvider, options = {}) {
+    const batchStart = process.hrtime.bigint();
+
+    const allDocs = await this._vaultStore.loadAll();
+    const results = [];
+
+    for (const doc of allDocs) {
+      const result = await this.rewrapVault(doc.id, targetProvider, options);
+      results.push(result);
+    }
+
+    const totalDurationMicros = Number(process.hrtime.bigint() - batchStart) / 1000;
+    const successCount = results.filter(r => r.success).length;
+    const failedCount = results.filter(r => !r.success).length;
+
+    // Emit batch completion event
+    this._eventBus.emit(
+      LclEvent.builder()
+        .event('lcl.rewrap.batch.completed')
+        .tier(EventTier.L2)
+        .result('success')
+        .durationMicros(totalDurationMicros)
+        .attributes(new Map([
+          ['totalCount', String(results.length)],
+          ['successCount', String(successCount)],
+          ['failedCount', String(failedCount)],
+          ['totalDurationMicros', String(totalDurationMicros)]
+        ]))
+        .build()
+    );
+
+    return results;
   }
 
   /**
