@@ -48,6 +48,14 @@ class KeyVaultService {
 
     if (!vaultDoc) {
       vaultDoc = await this._initializeVault(namespace);
+      this._eventBus.emit(
+        LclEvent.builder()
+          .event('lcl.keyvault.init.completed')
+          .tier(EventTier.L2)
+          .result('success')
+          .namespace(namespace)
+          .build()
+      );
     }
 
     await this._populateCache(vaultDoc, namespace);
@@ -255,6 +263,16 @@ class KeyVaultService {
 
     // Reload keys into cache
     await this._populateCache(vaultDoc, namespace);
+
+    this._eventBus.emit(
+      LclEvent.builder()
+        .event('lcl.rotation.execute.completed')
+        .tier(EventTier.L2)
+        .result('success')
+        .namespace(namespace)
+        .attributes(new Map([['kid', newKid]]))
+        .build()
+    );
   }
 
   /**
@@ -559,6 +577,16 @@ class KeyVaultService {
 
     // Reload cache
     await this._populateCache(vaultDoc, namespace);
+
+    this._eventBus.emit(
+      LclEvent.builder()
+        .event('lcl.keyvault.keys.retired')
+        .tier(EventTier.L2)
+        .result('success')
+        .namespace(namespace)
+        .attributes(new Map([['retiredKids', kids.join(',')]]))
+        .build()
+    );
   }
 
   /**
@@ -592,6 +620,17 @@ class KeyVaultService {
 
     // Reload cache
     await this._populateCache(vaultDoc, namespace);
+
+    this._eventBus.emit(
+      LclEvent.builder()
+        .event('lcl.keyvault.keys.pruned')
+        .tier(EventTier.L2)
+        .result('success')
+        .namespace(namespace)
+        .attributes(new Map([['removedCount', String(retiredCount)]]))
+        .build()
+    );
+
     return retiredCount;
   }
 
@@ -603,6 +642,14 @@ class KeyVaultService {
       this._destroyKeyMaterial(entry);
     }
     this._cache.clear();
+
+    this._eventBus.emit(
+      LclEvent.builder()
+        .event('lcl.keyvault.cache.evicted')
+        .tier(EventTier.L1)
+        .result('success')
+        .build()
+    );
   }
 
   // ===== Internal methods =====
@@ -761,6 +808,20 @@ class KeyVaultService {
     };
 
     this._cache.set(namespace, cacheEntry);
+
+    this._eventBus.emit(
+      LclEvent.builder()
+        .event('lcl.keyvault.load.completed')
+        .tier(EventTier.L2)
+        .result('success')
+        .namespace(namespace)
+        .attributes(new Map([
+          ['activeKid', activeKid],
+          ['dekVersion', String(activeDekVersion)]
+        ]))
+        .build()
+    );
+
     return cacheEntry;
   }
 
