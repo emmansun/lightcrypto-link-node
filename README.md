@@ -24,8 +24,12 @@ and **byte-level Wire Format V1 compatibility** with the Java [LightCrypto-Link]
 Deep docs are in [docs](docs/):
 
 - [Configuration](docs/configuration.md) — env vars, secret managers, CMK provider setup
-- [Architecture](docs/architecture.md) — envelope encryption, Wire Format V1, namespace model, key vault format, rotation
+- [Architecture](docs/architecture.md) — envelope encryption, Wire Format V1, namespace model, key vault format, event system, health module
 - [CMK Provider](docs/cmk-provider.md) — custom provider interface and built-in providers
+- [Key Lifecycle](docs/key-lifecycle.md) — CMK re-wrap, DEK rotation, DEK re-encryption, RETIRED lifecycle
+- [Observability](docs/observability.md) — event catalog, EventBus implementations, Health module, k8s probes
+- [Multi-Tenancy](docs/multi-tenancy.md) — namespace isolation, per-field vault routing
+- [Cross-CMK Migration](docs/migration/cross-cmk-provider-migration.md) — provider migration runbook
 - [Type Mapping](docs/type-mapping.md) — Java ↔ Node.js type compatibility
 - [Troubleshooting](docs/troubleshooting.md) — common errors, security, limitations
 
@@ -37,11 +41,15 @@ Deep docs are in [docs](docs/):
 - Structured type encryption: whole-object (`DOC`), whole-array (`COL`), element-level array encryption
 - Nested path encryption for sub-documents and array elements (e.g., `address.street`, `items[].price`)
 - Encryption mode control: `AUTO` (default), `ELEMENT`, `WHOLE`
-- Per-entity DEK versioning and rotation
+- Per-entity DEK versioning and rotation with full key lifecycle: `ACTIVE → ROTATED → RETIRED → pruned`
+- Cross-CMK provider re-wrap: migrate vault keys between KMS providers without re-encrypting data
+- DEK re-encryption engine: batch document migration to new DEK with blind index recomputation and CAS protection
 - Pluggable CMK providers: Local, Azure Key Vault, Alibaba Cloud KMS
-- Pluggable storage adapters: VaultStore SPI (`MongoVaultStore`, `InMemoryVaultStore`) + Data Storage SPI (`StorageAdapter`, `DocumentAccessor`, `StructuredValueCodec`, `QueryTransformer`) with Mongoose/BSON defaults
+- Pluggable storage adapters: VaultStore SPI (`MongoVaultStore`, `InMemoryVaultStore`) + Data Storage SPI (`StorageAdapter`, `DocumentAccessor`, `StructuredValueCodec`, `QueryTransformer`) + DocumentRewriteStore SPI (`MongoDocumentRewriteStore`)
 - Bootstrap self-check engine: KAT vector verification, KMS/Vault reachability checks at startup
-- Structured event bus: L1/L2/L3 tiered events with composite multi-cast and failure isolation
+- Structured error taxonomy: typed decrypt failures (`PayloadCorruptionError`, `KeyResolutionError`, `CryptoAuthenticationError`, `SchemaDriftError`, `UnsupportedAlgorithmError`)
+- Structured event bus: L1/L2/L3 tiered events, `LoggingEventBus` (structured JSON), composite multi-cast with failure isolation
+- Health module: `LclHealthCollector` with four-state model for k8s readiness/liveness probes
 - Zero third-party crypto dependencies (native Node.js `crypto`)
 - **Wire Format V1** cross-language binary compatibility with Java LightCrypto-Link (verified by golden vector test suite)
 - BSON format compatible with Java LightCrypto-Link (DOC, COL, MAP type markers)
@@ -216,14 +224,24 @@ node examples/plaintext-backfill.js --batch-size=500 --start-after-id=6691a2b3c4
 
 See [examples/plaintext-backfill.js](examples/plaintext-backfill.js) for full configuration options.
 
-## Rotation
+## Rotation & Key Lifecycle
 
 ```javascript
+// DEK rotation: new writes use v2, existing data still readable with v1
 await keyVaultService.rotateDek('User');
-keyVaultService.flushCache();
+
+// Cross-CMK re-wrap: migrate vault keys to a new KMS provider
+const result = await keyVaultService.rewrapVault(namespace, targetProvider);
+
+// DEK re-encryption: migrate all documents to the active DEK
+const reResult = await dekReEncryptionService.reEncrypt('users', fieldConfigs);
+
+// Retire and prune old keys
+await keyVaultService.markKeysRetired(namespace, ['v1-abcd1234']);
+await keyVaultService.pruneRetiredKeys(namespace);
 ```
 
-For behavior details, see [docs/architecture.md](docs/architecture.md).
+For the full lifecycle guide (CMK re-wrap, DEK rotation, re-encryption, RETIRED), see [docs/key-lifecycle.md](docs/key-lifecycle.md).
 
 ## Programmatic API
 
@@ -276,14 +294,17 @@ const decrypted = fieldService.decryptField(encrypted, dek, hmacKey, algorithm);
 See [examples/](examples/) for runnable demos:
 
 ```bash
-node examples/basic-crud.js          # CRUD with blind index
-node examples/plaintext-backfill.js  # Migrate plaintext data to encrypted
-node examples/multi-algorithm.js     # AES-GCM, AES-CBC, SM4-CBC
-node examples/key-rotation.js        # DEK rotation
-node examples/config-from-env.js     # Configuration sources
-node examples/programmatic-encrypt.js # Programmatic encrypt/decrypt API
-node examples/azure-kms.js           # Azure Key Vault
-node examples/alibaba-kms.js         # Alibaba Cloud KMS
+node examples/basic-crud.js            # CRUD with blind index
+node examples/plaintext-backfill.js    # Migrate plaintext data to encrypted
+node examples/multi-algorithm.js       # AES-GCM, AES-CBC, SM4-CBC
+node examples/key-rotation.js          # DEK rotation
+node examples/cmk-rewrap.js            # Cross-CMK provider re-wrap
+node examples/dek-re-encryption.js     # DEK re-encryption engine
+node examples/config-from-env.js       # Configuration sources
+node examples/programmatic-encrypt.js  # Programmatic encrypt/decrypt API
+node examples/bootstrap-selfcheck.js   # Bootstrap self-check engine
+node examples/azure-kms.js             # Azure Key Vault
+node examples/alibaba-kms.js           # Alibaba Cloud KMS
 ```
 
 ## Project Structure
@@ -291,17 +312,19 @@ node examples/alibaba-kms.js         # Alibaba Cloud KMS
 ```text
 lightcrypto-link-node/
 ├── src/
-│   ├── spi/             # SPI interfaces (VaultStore, StorageAdapter, DocumentAccessor, QueryTransformer, StructuredValueCodec, VaultDocument, OptimisticLockError)
-│   ├── adapter/         # Default implementations (MongoVaultStore, InMemoryVaultStore, MongooseStorageAdapter, MongooseDocumentAccessor, BsonStructuredValueCodec, MongooseQueryTransformer)
+│   ├── spi/             # SPI interfaces (VaultStore, StorageAdapter, DocumentAccessor, QueryTransformer, StructuredValueCodec, DocumentRewriteStore, VaultDocument, OptimisticLockError)
+│   ├── adapter/         # Default implementations (MongoVaultStore, InMemoryVaultStore, MongooseStorageAdapter, MongooseDocumentAccessor, BsonStructuredValueCodec, MongooseQueryTransformer, MongoDocumentRewriteStore)
 │   ├── crypto/          # Encryptor implementations (AES-GCM, AES-CBC, SM4-CBC, CryptoCodec)
+│   ├── error/           # Structured error taxonomy (LclCryptoError + typed subclasses)
 │   ├── format/          # Wire Format V1 (AlgorithmId, WireFormatEncoder, WireFormatDecoder)
 │   ├── namespace/       # Namespace model (tenant.realm.entity#field)
 │   ├── blindindex/      # HKDF-SHA256 blind index engine
-│   ├── service/         # KeyVaultService, FieldCryptoService, ProgrammaticCryptoService, TypeSerializer/Deserializer
+│   ├── service/         # KeyVaultService, FieldCryptoService, ProgrammaticCryptoService, DekReEncryptionService, TypeSerializer/Deserializer
 │   ├── provider/        # CMK providers (Local, Azure, Alibaba)
 │   ├── plugin/          # Mongoose plugin and query rewriter
 │   ├── bootstrap/       # Bootstrap engine, KAT runner, startup checks
-│   ├── event/           # Structured event bus (EventBus, LclEvent, EventTier, CompositeEventBus)
+│   ├── event/           # Structured event bus (EventBus, LclEvent, EventTier, LoggingEventBus, CompositeEventBus)
+│   ├── health/          # Health module (LclHealthStatus, ComponentHealthCheck, LclHealthCollector)
 │   ├── config/          # LclConfig (multi-source loader)
 │   └── index.js         # Public API exports
 ├── test/
