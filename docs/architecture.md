@@ -285,6 +285,7 @@ lightcrypto-link-node provides a structured event infrastructure for observabili
 | `EventTier` | Event classification constants (L1/L2/L3) |
 | `NoOpEventBus` | Singleton default that discards all events (zero overhead) |
 | `CompositeEventBus` | Multi-cast delegate with failure isolation |
+| `LoggingEventBus` | Structured JSON output with tier-based log level (aligned with Java Slf4jEventBus) |
 
 ### Event Tier
 
@@ -316,24 +317,46 @@ LclEvent instances MUST NOT contain IV, Tag, ciphertext, wrapped DEK, CMK materi
 ### Usage
 
 ```javascript
-const { EventBus, CompositeEventBus } = require('lightcrypto-link-node');
+const { LoggingEventBus, CompositeEventBus } = require('lightcrypto-link-node');
 
-// Custom EventBus implementation
-class LogEventBus extends EventBus {
-  emit(event) {
-    console.log(`[${event.tier}] ${event.event}: ${event.result}`);
-  }
-}
+// Built-in structured JSON logging (L1→debug, L2/L3→info)
+const bus = new LoggingEventBus();
 
 // Multi-cast to multiple buses
-const bus = new CompositeEventBus([
-  new LogEventBus(),
-  new MetricsEventBus()
+const composite = new CompositeEventBus([
+  bus,
+  new MetricsEventBus()  // custom implementation
 ]);
 
 schema.plugin(lclCryptoPlugin, {
   cmkProvider,
   vaultStore,
-  bootstrap: { eventBus: bus }
+  bootstrap: { eventBus: composite }
+});
+```
+
+See [Observability Guide](./observability.md) for the full event catalog and Health module.
+
+## Health Module (src/health/)
+
+Framework-agnostic health check infrastructure for k8s readiness/liveness probes, aligned with Java `LclHealthCollector`.
+
+| Module | Purpose |
+|--------|--------|
+| `LclHealthStatus` | Four-state model: STARTING, READY, DEGRADED, FAILED |
+| `ComponentHealthCheck` | SPI base class for component-level checks |
+| `LclHealthCollector` | Aggregates checks → overall status + details (incl. sdkVersion) |
+
+```javascript
+const { LclHealthCollector, LclHealthStatus } = require('lightcrypto-link-node');
+
+const collector = new LclHealthCollector({
+  vault: { check: () => vaultOk ? LclHealthStatus.READY : LclHealthStatus.FAILED },
+  kms: { check: () => kmsOk ? LclHealthStatus.READY : LclHealthStatus.DEGRADED }
+});
+
+app.get('/healthz', (req, res) => {
+  const { overall, details } = collector.collect();
+  res.status(overall === 'READY' ? 200 : 503).json(details);
 });
 ```
