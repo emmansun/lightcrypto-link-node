@@ -30,6 +30,7 @@ Deep docs are in [docs](docs/):
 - [Observability](docs/observability.md) — event catalog, EventBus implementations, Health module, k8s probes
 - [Multi-Tenancy](docs/multi-tenancy.md) — namespace isolation, per-field vault routing
 - [Cross-CMK Migration](docs/migration/cross-cmk-provider-migration.md) — provider migration runbook
+- [Plaintext Migration](docs/migration/introduce-lcl-to-existing-plaintext-data.md) — introduce encryption to existing data
 - [Type Mapping](docs/type-mapping.md) — Java ↔ Node.js type compatibility
 - [Troubleshooting](docs/troubleshooting.md) — common errors, security, limitations
 
