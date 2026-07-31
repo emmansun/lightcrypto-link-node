@@ -189,7 +189,7 @@ keyVaultService.flushCache();
 | AES-256-GCM | 32 bytes | 12 bytes | Supported (default) |
 | AES-256-CBC | 32 bytes | 16 bytes | Supported (legacy) |
 | SM4-CBC | 16 bytes | 16 bytes | Supported (China compliance) |
-| SM4-GCM | 16 bytes | 12 bytes | Registry only (Node.js builds OpenSSL without SM4-GCM/CCM modes) |
+| SM4-GCM | 16 bytes | 12 bytes | Registry only (not registered in Node.js bundled OpenSSL build) |
 
 ## Backward Compatibility
 

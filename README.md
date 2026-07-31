@@ -344,7 +344,7 @@ lightcrypto-link-node/
 - **Node.js**: 22.x (recommended), 24.x
 - **Mongoose**: 8.x, 9.x
 - **MongoDB**: 5.0+, 6.0+, 7.0+, 8.0+
-- **Java LightCrypto-Link**: Full Wire Format V1 byte-level compatibility (encryption, blind index, KCV, roundtrip verified by golden vector suite). BSON format compatible (DOC, COL, MAP type markers). Note: SM4-GCM is not available in Node.js (Node.js builds OpenSSL without SM4-GCM/CCM modes, even with OpenSSL 3.5+); SM4-CBC and AES-256-GCM cover all supported use cases.
+- **Java LightCrypto-Link**: Full Wire Format V1 byte-level compatibility (encryption, blind index, KCV, roundtrip verified by golden vector suite). BSON format compatible (DOC, COL, MAP type markers). Note: SM4-GCM/CCM are not registered in Node.js's bundled OpenSSL build (provider source files not included in pre-generated build config); SM4-CBC and AES-256-GCM cover all supported use cases.
 
 ## License
 

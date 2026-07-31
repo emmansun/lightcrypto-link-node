@@ -213,7 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Binding verification** - Ensures DEK/HMAC key pair integrity
 
 ### Known Limitations
-- **SM4-GCM not available** - Node.js builds OpenSSL without SM4-GCM/CCM modes (even with OpenSSL 3.5+); use SM4-CBC or AES-256-GCM instead
+- **SM4-GCM/CCM not available** - Not registered in Node.js's bundled OpenSSL build (provider sources missing from pre-generated config); use SM4-CBC or AES-256-GCM instead
 - **No range queries** - Encrypted fields cannot use `$gt`, `$lt`, etc. (by design)
 - **No full-text search** - Encrypted fields cannot be searched with `$text`
 - **No regex queries** - Encrypted fields cannot use pattern matching

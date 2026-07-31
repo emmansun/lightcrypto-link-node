@@ -40,7 +40,7 @@ All errors carry structured context: `.namespace`, `.dekVersion`, `.kid`, `.fiel
 | missing '_k' (kid) field | Malformed encrypted sub-document | Check document was encrypted by compatible library version |
 | `ERR_LCL_UNSUPPORTED_ALGORITHM` | Unknown `_a` value or unknown Wire Format algorithm byte | Ensure both Java and Node.js use supported algorithms |
 | Unsupported query operation on encrypted field | Query uses operators like `$gt` / `$regex` on `encrypt: true` + `blindIndex: true` field | Use exact-match or `$in` only, or query a separate plaintext/search projection field |
-| Unknown algorithm byte: 0x03 | SM4_GCM wire format detected | SM4-GCM is not available in Node.js (Node.js builds OpenSSL without SM4-GCM/CCM modes); use SM4-CBC or AES-256-GCM instead |
+| Unknown algorithm byte: 0x03 | SM4_GCM wire format detected | SM4-GCM is not registered in Node.js's bundled OpenSSL build; use SM4-CBC or AES-256-GCM instead |
 | Ambiguous namespace | Namespace string has unexpected dot count | Use either `Entity#field` (shorthand) or `tenant.realm.entity#field` (full form) |
 | CMK must be 64 hex chars | Invalid CMK format | Provide a valid 64-character hex string (32 bytes) |
 | cmkVersion is required for unwrap | Missing key version metadata | Ensure wrap() was called with a provider that stores cmkVersion |
@@ -81,7 +81,7 @@ Event attributes include: `namespace`, `dekVersion`, `errorType`, `errorCode`, `
 
 ## Limitations
 
-- **SM4-GCM**: Not available in Node.js. Node.js builds OpenSSL without SM4-GCM/CCM modes (verified with OpenSSL 3.5.7 / Node.js 24.x). Wire Format V1 parsing and registry support SM4_GCM (`0x03`) for forward compatibility. Use SM4-CBC for China compliance or AES-256-GCM for authenticated encryption.
+- **SM4-GCM/CCM**: Not registered in Node.js's bundled OpenSSL build. The SM4-GCM/CCM provider source files are not included in Node.js's pre-generated build config (verified with OpenSSL 3.5.7 / Node.js 24.x). Wire Format V1 parsing and registry support SM4_GCM (`0x03`) for forward compatibility. Use SM4-CBC for China compliance or AES-256-GCM for authenticated encryption.
 - **Blind index query operators**: For encrypted fields with `blindIndex: true`, only exact-match and `$in` are supported. Other operators throw.
 - **Range queries**: Not supported on encrypted fields (`$gt`, `$lt`, `$gte`, `$lte`)
 - **Full-text search**: Not supported on encrypted fields (`$text`)
