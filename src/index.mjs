@@ -66,7 +66,12 @@ export const {
   LclEvent,
   EventTier,
   NoOpEventBus,
-  CompositeEventBus
+  CompositeEventBus,
+  LoggingEventBus,
+  LclHealthStatus,
+  healthWorst,
+  ComponentHealthCheck,
+  LclHealthCollector
 } = cjs;
 
 export default cjs;

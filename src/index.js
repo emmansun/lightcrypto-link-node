@@ -63,8 +63,17 @@ const {
   LclEvent,
   EventTier,
   NoOpEventBus,
-  CompositeEventBus
+  CompositeEventBus,
+  LoggingEventBus
 } = require('./event');
+
+// Health
+const {
+  LclHealthStatus,
+  worst: healthWorst,
+  ComponentHealthCheck,
+  LclHealthCollector
+} = require('./health');
 
 // SPI layer
 const StorageAdapter = require('./spi/StorageAdapter');
@@ -183,5 +192,12 @@ module.exports = {
   LclEvent,
   EventTier,
   NoOpEventBus,
-  CompositeEventBus
+  CompositeEventBus,
+  LoggingEventBus,
+
+  // Health
+  LclHealthStatus,
+  healthWorst,
+  ComponentHealthCheck,
+  LclHealthCollector
 };
