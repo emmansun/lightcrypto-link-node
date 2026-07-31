@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Cross-CMK provider re-wrap** (`KeyVaultService.rewrapVault` / `rewrapAllVaults`):
+  - Re-wrap all DEK/HMAC keys under a new CMK provider without changing key material.
+  - KCV + binding invariance verification, post-rewrap roundtrip check, dry-run mode.
+  - Per-namespace error isolation in batch mode.
+- **Structured error taxonomy** (`src/error/`):
+  - `LclCryptoError` base class with `.code`, `.namespace`, `.dekVersion`, `.kid`, `.fieldName`, `.cause`.
+  - Typed subclasses: `PayloadCorruptionError`, `KeyResolutionError`, `CryptoAuthenticationError`, `SchemaDriftError`, `UnsupportedAlgorithmError`.
+  - Decrypt path is read-only: vault missing throws `KeyResolutionError`, never creates garbage vaults.
+- **DEK re-encryption engine** (`DekReEncryptionService`):
+  - Batch scan → decrypt → re-encrypt → blind index recompute → CAS write.
+  - `DocumentRewriteStore` SPI with `MongoDocumentRewriteStore` implementation.
+  - Checkpoint resume via `taskId`, configurable batch size, dry-run mode.
+- **RETIRED key lifecycle**:
+  - `KeyVaultService.markKeysRetired(namespace, kids)` — ROTATED → RETIRED transition.
+  - `KeyVaultService.pruneRetiredKeys(namespace)` — permanently remove RETIRED entries.
+  - `getDekByVersion` rejects RETIRED keys with `KeyResolutionError`.
+- **Observability enhancements**:
+  - `LoggingEventBus` — structured JSON event output with tier-based log level (L1→debug, L2/L3→info), aligned with Java `Slf4jEventBus`.
+  - Health module (`src/health/`): `LclHealthStatus` (STARTING/READY/DEGRADED/FAILED), `ComponentHealthCheck` SPI, `LclHealthCollector` for k8s readiness probes.
+  - 6 new KeyVaultService events aligned with Java: `lcl.keyvault.init.completed`, `lcl.keyvault.load.completed`, `lcl.rotation.execute.completed`, `lcl.keyvault.keys.retired`, `lcl.keyvault.keys.pruned`, `lcl.keyvault.cache.evicted`.
+- **Documentation**:
+  - `docs/observability.md` — full event catalog, EventBus implementations guide, Health module usage, k8s probe config.
+  - `docs/key-lifecycle.md` — CMK re-wrap / DEK rotation / DEK re-encryption / RETIRED lifecycle guide.
+
+### Changed
+- **Dependencies**:
+  - Bumped `mongoose` from 9.8.1 to 9.9.0 (dev).
+  - Updated `github/codeql-action/upload-sarif`.
+
 ## [1.2.0] - 2026-07-29
 
 ### Added
