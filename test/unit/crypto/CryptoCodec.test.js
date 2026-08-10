@@ -79,7 +79,9 @@ describe('CryptoCodec', () => {
     test('decrypt with wrong key throws CryptoAuthenticationError (CBC)', () => {
       const plaintext = Buffer.from('secret', 'utf8');
       const encrypted = codec.encrypt(dek32, plaintext, 'AES_256_CBC', ns, 1);
-      const wrongKey = crypto.randomBytes(32);
+      // Use a deterministic wrong key (all zeros) to avoid flaky PKCS7 padding collisions.
+      // With a random wrong key, ~1/256 chance the padding check passes and no error is thrown.
+      const wrongKey = Buffer.alloc(32, 0);
       expect(() => codec.decrypt(wrongKey, encrypted)).toThrow(CryptoAuthenticationError);
     });
 
