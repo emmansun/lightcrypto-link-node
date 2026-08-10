@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-10
+
 ### Added
 - **Cross-CMK provider re-wrap** (`KeyVaultService.rewrapVault` / `rewrapAllVaults`):
   - Re-wrap all DEK/HMAC keys under a new CMK provider without changing key material.
@@ -31,11 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**:
   - `docs/observability.md` — full event catalog, EventBus implementations guide, Health module usage, k8s probe config.
   - `docs/key-lifecycle.md` — CMK re-wrap / DEK rotation / DEK re-encryption / RETIRED lifecycle guide.
+  - `docs/migration/introduce-lcl-to-existing-plaintext-data.md` — plaintext-to-encrypted migration guide (aligned with Java).
 
 ### Changed
 - **Dependencies**:
-  - Bumped `mongoose` from 9.8.1 to 9.9.0 (dev).
+  - Bumped `mongoose` from 9.8.1 to 9.9.1 (dev).
   - Updated `github/codeql-action/upload-sarif`.
+- **Documentation**:
+  - Corrected SM4-GCM limitation description: root cause is Node.js bundled OpenSSL provider registration, not an OpenSSL version issue.
+
+### Fixed
+- **Flaky CBC wrong-key test**: Use deterministic wrong key to avoid ~1/256 PKCS7 padding collision.
 
 ## [1.2.0] - 2026-07-29
 
